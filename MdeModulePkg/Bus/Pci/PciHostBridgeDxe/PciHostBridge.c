@@ -190,7 +190,7 @@ AddIoSpace (
       goto FreeIoSpaceMap;
     }
   }
-
+#if 0
   DEBUG_CODE_BEGIN ();
   //
   // Make sure there are adjacent descriptors covering [Base, Base + Length).
@@ -211,7 +211,7 @@ AddIoSpace (
   }
 
   DEBUG_CODE_END ();
-
+#endif
 FreeIoSpaceMap:
   FreePool (IoSpaceMap);
 

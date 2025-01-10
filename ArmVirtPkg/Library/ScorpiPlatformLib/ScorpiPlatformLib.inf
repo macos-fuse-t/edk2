@@ -1,0 +1,38 @@
+#/* @file
+#  Copyright (c) 2011-2012, ARM Limited. All rights reserved.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+#*/
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ScorpiPlatformLib
+  FILE_GUID                      = 8c67f695-9e77-4ad8-b31e-90e7c2b0afd7
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = ArmPlatformLib
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  ArmPlatformPkg/ArmPlatformPkg.dec
+
+[LibraryClasses]
+  ArmLib
+  DebugLib
+
+[Sources.common]
+  ScorpiPlatformLib.c
+  ScorpiPlatformLibMem.c
+
+[Sources.AArch64]
+  AArch64/ArmPlatformHelper.S
+
+[FixedPcd]
+  gArmTokenSpaceGuid.PcdArmPrimaryCoreMask
+  gArmTokenSpaceGuid.PcdArmPrimaryCore
+
+[Ppis]
+  gArmMpCoreInfoPpiGuid
