@@ -107,19 +107,6 @@ EmuGopDriverBindingSupported (
   Status = EFI_UNSUPPORTED;
   if ((Pci.Hdr.VendorId == 0xFB5D) && (Pci.Hdr.DeviceId == 0x65F1)) {
     DEBUG ((DEBUG_INFO, "BHYVE framebuffer device detected\n"));
-    Status = EFI_SUCCESS;
-
-    // Read PCI Command Register
-    /*Status = PciIo->Pci.Read(PciIo, EfiPciIoWidthUint16, PCI_COMMAND_OFFSET, 1, &Command);
-    if (EFI_ERROR(Status)) {
-      return Status;
-    }*/
-
-    // Set necessary bits (I/O Space, Memory Space, Bus Master)
-    //Command |= (EFI_PCI_COMMAND_IO_SPACE | EFI_PCI_COMMAND_MEMORY_SPACE | EFI_PCI_COMMAND_BUS_MASTER);
-
-    // Write back to PCI Command Register
-    //Status = PciIo->Pci.Write(PciIo, EfiPciIoWidthUint16, PCI_COMMAND_OFFSET, 1, &Command);
     Status = PciIo->Attributes (
                       PciIo,
                       EfiPciIoAttributeOperationEnable,

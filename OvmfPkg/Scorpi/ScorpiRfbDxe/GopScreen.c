@@ -26,11 +26,12 @@ EFI_EVENT  mGopScreenExitBootServicesEvent;
 
 GOP_MODE_DATA  mGopModeData[] = {
   { 0,    0,   32, 0 },        // Filled in with user-spec'd resolution
+  { 1920, 1080, 32, 0 },
   { 1600, 1200, 32, 0 },
   { 1280, 1024, 32, 0 },
   { 1024, 768, 32, 0 },
   { 800,  600, 32, 0 },
-  { 640,  480, 32, 0 }
+  //{ 640,  480, 32, 0 }
 };
 
 STATIC
