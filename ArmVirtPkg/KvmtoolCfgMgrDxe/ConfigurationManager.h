@@ -120,6 +120,7 @@ typedef struct PlatformRepositoryInfo {
   /// A handle to the FDT HwInfoParser.
   ///
   HW_INFO_PARSER_HANDLE                           FdtParserHandle;
+
 } EDKII_PLATFORM_REPOSITORY_INFO;
 
 #endif // CONFIGURATION_MANAGER_H_

@@ -87,6 +87,9 @@ typedef struct CmAStdObjAcpiTableInfo {
   /// Optional pointer to the ACPI table data
   EFI_ACPI_DESCRIPTION_HEADER    *AcpiTableData;
 
+  ///
+  BOOLEAN   SkipOnError;
+
   /// An OEM-supplied string that the OEM uses to identify the particular
   /// data table. This field is particularly useful when defining a definition
   /// block to distinguish definition block functions. The OEM assigns each
@@ -113,6 +116,7 @@ typedef struct CmAStdObjAcpiTableInfo {
   /// e.g. This field can be used to specify the minor revision to be set
   /// for the FADT table.
   UINT8     MinorRevision;
+
 } CM_STD_OBJ_ACPI_TABLE_INFO;
 
 /** A structure used to describe the SMBIOS table generators to be invoked.

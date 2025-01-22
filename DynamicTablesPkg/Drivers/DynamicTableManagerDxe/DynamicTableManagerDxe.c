@@ -250,6 +250,7 @@ BuildAndInstallMultipleAcpiTable (
   }
 
 exit_handler:
+
   // Free any resources allocated for generating the tables.
   if (Generator->FreeTableResourcesEx != NULL) {
     Status1 = Generator->FreeTableResourcesEx (
@@ -275,6 +276,9 @@ exit_handler:
     }
   }
 
+  if (AcpiTableInfo->SkipOnError) {
+    Status = EFI_SUCCESS;
+  }
   return Status;
 }
 

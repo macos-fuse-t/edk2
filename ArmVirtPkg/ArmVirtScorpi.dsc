@@ -30,12 +30,19 @@
 
 !include ArmVirtPkg/ArmVirt.dsc.inc
 
+!if $(ARCH) == AARCH64
+!include DynamicTablesPkg/DynamicTables.dsc.inc
+!endif
+
 [LibraryClasses.common]
 !if $(TARGET) != RELEASE
   DebugLib|MdePkg/Library/BaseDebugLibSerialPort/BaseDebugLibSerialPort.inf
 !endif
   ArmLib|ArmPkg/Library/ArmLib/ArmBaseLib.inf
   ArmMmuLib|ArmPkg/Library/ArmMmuLib/ArmMmuBaseLib.inf
+
+  HwInfoParserLib|DynamicTablesPkg/Library/FdtHwInfoParserLib/FdtHwInfoParserLib.inf
+  DynamicPlatRepoLib|DynamicTablesPkg/Library/Common/DynamicPlatRepoLib/DynamicPlatRepoLib.inf
 
   # Virtio Support
   VirtioLib|OvmfPkg/Library/VirtioLib/VirtioLib.inf
@@ -183,6 +190,8 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosEntryPointProvideMethod|0x2
 
 [PcdsDynamicDefault.common]
+  gUefiOvmfPkgTokenSpaceGuid.PcdOvmfHostBridgePciDevId|0x5678
+
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|3
 
   ## If TRUE, OvmfPkg/AcpiPlatformDxe will not wait for PCI
@@ -220,6 +229,11 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdVideoVerticalResolution|768
   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoHorizontalResolution|1024
   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoVerticalResolution|768
+
+  # SMBIOS
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosVersion|0x0300
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosDocRev|0x0
+  gUefiOvmfPkgTokenSpaceGuid.PcdQemuSmbiosValidated|TRUE
 
 [PcdsDynamicHii]
   gUefiOvmfPkgTokenSpaceGuid.PcdForceNoAcpi|L"ForceNoAcpi"|gOvmfVariableGuid|0x0|FALSE|NV,BS
@@ -385,6 +399,15 @@
   #
   OvmfPkg/PlatformHasAcpiDtDxe/PlatformHasAcpiDtDxe.inf
 
+  #
+  # SMBIOS Support
+  #
+  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf {
+    <LibraryClasses>
+      NULL|OvmfPkg/Library/SmbiosVersionLib/DetectSmbiosVersionLib.inf
+  }
+  OvmfPkg/SmbiosPlatformDxe/SmbiosPlatformDxe.inf
+
   # GOP Display
   OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf {
     <LibraryClasses>
@@ -415,4 +438,9 @@
     <LibraryClasses>
       NULL|OvmfPkg/Fdt/FdtPciPcdProducerLib/FdtPciPcdProducerLib.inf
   }
+
+  #
+  # ACPI Support
+  #
+  ArmVirtPkg/KvmtoolCfgMgrDxe/ConfigurationManagerDxe.inf
   
