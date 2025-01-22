@@ -163,6 +163,8 @@ READ_LOCK_STATUS   = TRUE
   INF OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
   INF OvmfPkg/VirtioRngDxe/VirtioRng.inf
 
+  INF MdeModulePkg/Bus/Ata/AtaBusDxe/AtaBusDxe.inf
+  INF MdeModulePkg/Bus/Ata/AtaAtapiPassThru/AtaAtapiPassThru.inf
   # SATA
   INF MdeModulePkg/Bus/Pci/SataControllerDxe/SataControllerDxe.inf
 
