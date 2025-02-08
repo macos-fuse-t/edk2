@@ -9,5 +9,5 @@
 #include <Library/ArmLib.h>
 
 ASM_FUNC(ArmPlatformPeiBootAction)
-  msr	SPSel, #1		/* make sure we use correct SP_ELx */ 
+  msr	SPSel, #1		/* make sure we use correct SP_ELx */
   ret

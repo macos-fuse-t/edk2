@@ -27,8 +27,13 @@
   #
   DEFINE TTY_TERMINAL            = FALSE
   DEFINE SECURE_BOOT_ENABLE      = FALSE
+  DEFINE NETWORK_ENABLE          = FALSE
+  DEFINE NETWORK_SNP_ENABLE      = FALSE
+  DEFINE NETWORK_IP4_ENABLE      = FALSE
 
 !include ArmVirtPkg/ArmVirt.dsc.inc
+
+#!include NetworkPkg/NetworkComponents.dsc.inc
 
 !if $(ARCH) == AARCH64
 !include DynamicTablesPkg/DynamicTables.dsc.inc
@@ -87,7 +92,7 @@
   UefiScsiLib|MdePkg/Library/UefiScsiLib/UefiScsiLib.inf
 
 [BuildOptions]
-!include NetworkPkg/NetworkBuildOptions.dsc.inc
+#!include NetworkPkg/NetworkBuildOptions.dsc.inc
 
 ################################################################################
 #
@@ -153,8 +158,8 @@
   # System Memory Base -- fixed at 0x1000_0000
   gArmTokenSpaceGuid.PcdSystemMemoryBase|0x100000000
 
-  # initial location of the device tree blob passed by Scorpi -- base of DRAM
-  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress|0x100000000
+  # initial location of the device tree blob passed by Scorpi -- Last 65K of ROM
+  gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress|0xFFFF0000
 
   gEfiMdeModulePkgTokenSpaceGuid.PcdResetOnMemoryTypeInformationChange|FALSE
   gEfiMdeModulePkgTokenSpaceGuid.PcdBootManagerMenuFile|{ 0x21, 0xaa, 0x2c, 0x46, 0x14, 0x76, 0x03, 0x45, 0x83, 0x6e, 0x8a, 0xb6, 0xf4, 0x66, 0x23, 0x31 }
@@ -237,6 +242,11 @@
 
 [PcdsDynamicHii]
   gUefiOvmfPkgTokenSpaceGuid.PcdForceNoAcpi|L"ForceNoAcpi"|gOvmfVariableGuid|0x0|FALSE|NV,BS
+
+#
+# Network Pcds
+#
+#!include NetworkPkg/NetworkFixedPcds.dsc.inc
 
 ################################################################################
 #
@@ -436,7 +446,10 @@
   MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
   MdeModulePkg/Bus/Usb/UsbMassStorageDxe/UsbMassStorageDxe.inf
 
-[Components.AARCH64]
+  # Network
+  OvmfPkg/VirtioNetDxe/VirtioNet.inf
+
+  [Components.AARCH64]
   MdeModulePkg/Universal/Acpi/BootGraphicsResourceTableDxe/BootGraphicsResourceTableDxe.inf
   OvmfPkg/AcpiPlatformDxe/AcpiPlatformDxe.inf {
     <LibraryClasses>
@@ -448,3 +461,20 @@
   #
   ArmVirtPkg/KvmtoolCfgMgrDxe/ConfigurationManagerDxe.inf
   
+
+  ShellPkg/Application/Shell/Shell.inf {
+    <LibraryClasses>
+      ShellCommandLib|ShellPkg/Library/UefiShellCommandLib/UefiShellCommandLib.inf
+      NULL|ShellPkg/Library/UefiShellNetwork1CommandsLib/UefiShellNetwork1CommandsLib.inf
+!if $(NETWORK_IP6_ENABLE) == TRUE
+      NULL|ShellPkg/Library/UefiShellNetwork2CommandsLib/UefiShellNetwork2CommandsLib.inf
+!endif
+      HandleParsingLib|ShellPkg/Library/UefiHandleParsingLib/UefiHandleParsingLib.inf
+      PrintLib|MdePkg/Library/BasePrintLib/BasePrintLib.inf
+      BcfgCommandLib|ShellPkg/Library/UefiShellBcfgCommandLib/UefiShellBcfgCommandLib.inf
+
+    <PcdsFixedAtBuild>
+      gEfiMdePkgTokenSpaceGuid.PcdDebugPropertyMask|0xFF
+      gEfiShellPkgTokenSpaceGuid.PcdShellLibAutoInitialize|FALSE
+      gEfiMdePkgTokenSpaceGuid.PcdUefiLibMaxPrintBufferSize|8000
+  }
