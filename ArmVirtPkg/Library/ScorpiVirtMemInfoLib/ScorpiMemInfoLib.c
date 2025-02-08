@@ -229,6 +229,13 @@ ArmVirtGetMemoryMap (
   VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK;
   Index++;
 
+  // Map the device tree region
+  VirtualMemoryTable[Index].PhysicalBase = PcdGet64 (PcdDeviceTreeInitialBaseAddress);
+  VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;
+  VirtualMemoryTable[Index].Length       = FDT_SIZE;
+  VirtualMemoryTable[Index].Attributes   = ARM_MEMORY_REGION_ATTRIBUTE_WRITE_BACK_RO;
+  Index++;
+
   // GICv3
   VirtualMemoryTable[Index].PhysicalBase = SCORPI_GIC_BASE_ADDR;
   VirtualMemoryTable[Index].VirtualBase  = VirtualMemoryTable[Index].PhysicalBase;

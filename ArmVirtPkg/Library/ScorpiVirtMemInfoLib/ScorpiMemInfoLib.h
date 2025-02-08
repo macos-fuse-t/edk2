@@ -32,4 +32,6 @@ typedef struct {
 #define SCORPI_GIC_BASE_ADDR  0x2F000000UL
 #define SCORPI_GIC_SIZE       0xF10000UL
 
+#define FDT_SIZE              0x10000
+
 #endif // SCORPI_VIRT_MEM_INFO_LIB_H_
