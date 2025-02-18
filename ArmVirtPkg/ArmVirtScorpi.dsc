@@ -428,6 +428,7 @@
       BltLib|MdeModulePkg/Library/FrameBufferBltLib/FrameBufferBltLib.inf
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
   }
+  OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
 
   #
   # SCSI Bus and Disk Driver

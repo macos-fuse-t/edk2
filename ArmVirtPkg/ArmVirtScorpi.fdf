@@ -208,6 +208,7 @@ READ_LOCK_STATUS   = TRUE
 
   # GOP Driver
   INF OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf
+  INF OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
 
   # USB
   INF MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
