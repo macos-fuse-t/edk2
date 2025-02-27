@@ -104,8 +104,13 @@ EmuGopDriverBindingSupported (
     goto Done;
   }
 
+  DEBUG((DEBUG_INFO, "BHYVE framebuffer: device %x/%x vendor %x/%x\n", Pci.Hdr.DeviceId, Pci.Device.SubsystemID ,
+    Pci.Hdr.VendorId, Pci.Device.SubsystemVendorID));
+
   Status = EFI_UNSUPPORTED;
-  if ((Pci.Hdr.VendorId == 0xFB5D) && (Pci.Hdr.DeviceId == 0x65F1)) {
+  if ((Pci.Hdr.VendorId == 0xFB5D && Pci.Hdr.DeviceId == 0x65F1) ||
+      (Pci.Hdr.VendorId == 0x1AF4 && Pci.Hdr.DeviceId == 0x1050 && 
+      (Pci.Device.SubsystemVendorID == 0xFB5D && Pci.Device.SubsystemID == 0x4690))) {
     DEBUG ((DEBUG_INFO, "BHYVE framebuffer device detected\n"));
     Status = PciIo->Attributes (
                       PciIo,
