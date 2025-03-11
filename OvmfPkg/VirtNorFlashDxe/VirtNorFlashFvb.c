@@ -172,6 +172,41 @@ InitializeFvAndVariableStoreHeaders (
   return Status;
 }
 
+VOID
+ReadMem (
+  OUT VOID      *Buffer,
+  IN CONST VOID *Src,
+  IN UINTN      Len
+)
+{
+  UINTN i;
+  for (i = 0; i < Len; i++) {
+    *((UINT8*)Buffer + i) = MmioRead8((UINTN)((UINT8*)Src + i));
+  }
+}
+
+INT16
+CalculateFvHeaderChecksum (
+  IN UINT16       *Buffer,
+  IN UINTN        Length
+  )
+{
+  UINT16  Sum;
+  UINTN   Count;
+  UINTN   Total;
+
+  //
+  // Perform the word sum for buffer
+  //
+  Total = Length / sizeof (*Buffer);
+  for (Sum = 0, Count = 0; Count < Total; Count++, Buffer++) {
+    Sum = (UINT16)(Sum + MmioRead16((UINTN)(Buffer)));
+  }
+
+
+  return (UINT16) Sum;
+}
+
 /**
   Check the integrity of firmware volume header.
 
@@ -187,13 +222,14 @@ ValidateFvHeader (
   )
 {
   UINT16                            Checksum;
-  CONST EFI_FIRMWARE_VOLUME_HEADER  *FwVolHeader;
-  CONST VARIABLE_STORE_HEADER       *VariableStoreHeader;
+  CONST EFI_FIRMWARE_VOLUME_HEADER  FwVolHeader;
+  CONST VARIABLE_STORE_HEADER       VariableStoreHeader;
   UINTN                             VarOffset;
   UINTN                             VariableStoreLength;
   UINTN                             FvLength;
+  UINTN                             VariableStoreHeaderOffset;
 
-  FwVolHeader = (EFI_FIRMWARE_VOLUME_HEADER *)Instance->RegionBaseAddress;
+  ReadMem ((VOID *)&FwVolHeader, (VOID *)Instance->RegionBaseAddress, sizeof(FwVolHeader));
 
   FvLength = PcdGet32 (PcdFlashNvStorageVariableSize) + PcdGet32 (PcdFlashNvStorageFtwWorkingSize) +
              PcdGet32 (PcdFlashNvStorageFtwSpareSize);
@@ -203,9 +239,9 @@ ValidateFvHeader (
   // Length of FvBlock cannot be 2**64-1
   // HeaderLength cannot be an odd number
   //
-  if (  (FwVolHeader->Revision  != EFI_FVH_REVISION)
-     || (FwVolHeader->Signature != EFI_FVH_SIGNATURE)
-     || (FwVolHeader->FvLength  != FvLength)
+  if (  (FwVolHeader.Revision  != EFI_FVH_REVISION)
+     || (FwVolHeader.Signature != EFI_FVH_SIGNATURE)
+     || (FwVolHeader.FvLength  != FvLength)
         )
   {
     DEBUG ((
@@ -217,7 +253,7 @@ ValidateFvHeader (
   }
 
   // Check the Firmware Volume Guid
-  if ( CompareGuid (&FwVolHeader->FileSystemGuid, &gEfiSystemNvDataFvGuid) == FALSE ) {
+  if ( CompareGuid (&FwVolHeader.FileSystemGuid, &gEfiSystemNvDataFvGuid) == FALSE ) {
     DEBUG ((
       DEBUG_INFO,
       "%a: Firmware Volume Guid non-compatible\n",
@@ -226,8 +262,8 @@ ValidateFvHeader (
     return EFI_NOT_FOUND;
   }
 
-  // Verify the header checksum
-  Checksum = CalculateSum16 ((UINT16 *)FwVolHeader, FwVolHeader->HeaderLength);
+  Checksum = CalculateFvHeaderChecksum ((UINT16 *)Instance->RegionBaseAddress,
+    FwVolHeader.HeaderLength);
   if (Checksum != 0) {
     DEBUG ((
       DEBUG_INFO,
@@ -238,10 +274,12 @@ ValidateFvHeader (
     return EFI_NOT_FOUND;
   }
 
-  VariableStoreHeader = (VARIABLE_STORE_HEADER *)((UINTN)FwVolHeader + FwVolHeader->HeaderLength);
+  VariableStoreHeaderOffset = FwVolHeader.HeaderLength;
+  ReadMem ((VOID *)&VariableStoreHeader, 
+    (VOID *)(Instance->RegionBaseAddress + VariableStoreHeaderOffset), sizeof(VariableStoreHeader));
 
   // Check the Variable Store Guid
-  if (!CompareGuid (&VariableStoreHeader->Signature, &gEfiAuthenticatedVariableGuid)) {
+  if (!CompareGuid (&VariableStoreHeader.Signature, &gEfiAuthenticatedVariableGuid)) {
     DEBUG ((
       DEBUG_INFO,
       "%a: Variable Store Guid non-compatible\n",
@@ -250,8 +288,8 @@ ValidateFvHeader (
     return EFI_NOT_FOUND;
   }
 
-  VariableStoreLength = PcdGet32 (PcdFlashNvStorageVariableSize) - FwVolHeader->HeaderLength;
-  if (VariableStoreHeader->Size != VariableStoreLength) {
+  VariableStoreLength = PcdGet32 (PcdFlashNvStorageVariableSize) - FwVolHeader.HeaderLength;
+  if (VariableStoreHeader.Size != VariableStoreLength) {
     DEBUG ((
       DEBUG_INFO,
       "%a: Variable Store Length does not match\n",
@@ -264,28 +302,29 @@ ValidateFvHeader (
   // check variables
   //
   DEBUG ((DEBUG_INFO, "%a: checking variables\n", __func__));
-  VarOffset = sizeof (*VariableStoreHeader);
+  VarOffset = sizeof (VariableStoreHeader);
   for ( ; ;) {
     UINTN                                VarHeaderEnd;
     UINTN                                VarNameEnd;
     UINTN                                VarEnd;
     UINTN                                VarPadding;
-    CONST AUTHENTICATED_VARIABLE_HEADER  *VarHeader;
+    CONST AUTHENTICATED_VARIABLE_HEADER  VarHeader;
     CONST CHAR16                         *VarName;
     CONST CHAR8                          *VarState;
     RETURN_STATUS                        Status;
+    UINTN                                VarHeaderOffset;
 
-    Status = SafeUintnAdd (VarOffset, sizeof (*VarHeader), &VarHeaderEnd);
+    Status = SafeUintnAdd (VarOffset, sizeof (VarHeader), &VarHeaderEnd);
     if (RETURN_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "%a: integer overflow\n", __func__));
       return EFI_NOT_FOUND;
     }
 
-    if (VarHeaderEnd >= VariableStoreHeader->Size) {
-      if (VarOffset <= VariableStoreHeader->Size - sizeof (UINT16)) {
+    if (VarHeaderEnd >= VariableStoreHeader.Size) {
+      if (VarOffset <= VariableStoreHeader.Size - sizeof (UINT16)) {
         CONST UINT16  *StartId;
 
-        StartId = (VOID *)((UINTN)VariableStoreHeader + VarOffset);
+        StartId = (VOID *)((UINTN)&VariableStoreHeader + VarOffset);
         if (*StartId == 0x55aa) {
           DEBUG ((DEBUG_ERROR, "%a: startid at invalid location\n", __func__));
           return EFI_NOT_FOUND;
@@ -296,19 +335,20 @@ ValidateFvHeader (
       break;
     }
 
-    VarHeader = (VOID *)((UINTN)VariableStoreHeader + VarOffset);
-    if (VarHeader->StartId != 0x55aa) {
+    VarHeaderOffset = VariableStoreHeaderOffset + VarOffset;
+    ReadMem ((VOID *)&VarHeader, (VOID *)(Instance->DeviceBaseAddress + VarHeaderOffset), sizeof(VarHeader));
+    if (VarHeader.StartId != 0x55aa) {
       DEBUG ((DEBUG_INFO, "%a: end of var list (no startid)\n", __func__));
       break;
     }
 
-    if (VarHeader->State == 0xff) {
+    if (VarHeader.State == 0xff) {
       DEBUG ((DEBUG_INFO, "%a: end of var list (unwritten state)\n", __func__));
       break;
     }
 
     VarName = NULL;
-    switch (VarHeader->State) {
+    switch (VarHeader.State) {
       // usage: State = VAR_HEADER_VALID_ONLY
       case VAR_HEADER_VALID_ONLY:
         VarState = "header-ok";
@@ -336,47 +376,47 @@ ValidateFvHeader (
           DEBUG_ERROR,
           "%a: invalid variable state: 0x%x\n",
           __func__,
-          VarHeader->State
+          VarHeader.State
           ));
         return EFI_NOT_FOUND;
     }
 
-    Status = SafeUintnAdd (VarHeaderEnd, VarHeader->NameSize, &VarNameEnd);
+    Status = SafeUintnAdd (VarHeaderEnd, VarHeader.NameSize, &VarNameEnd);
     if (RETURN_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "%a: integer overflow\n", __func__));
       return EFI_NOT_FOUND;
     }
 
-    Status = SafeUintnAdd (VarNameEnd, VarHeader->DataSize, &VarEnd);
+    Status = SafeUintnAdd (VarNameEnd, VarHeader.DataSize, &VarEnd);
     if (RETURN_ERROR (Status)) {
       DEBUG ((DEBUG_ERROR, "%a: integer overflow\n", __func__));
       return EFI_NOT_FOUND;
     }
 
-    if (VarEnd > VariableStoreHeader->Size) {
+    if (VarEnd > VariableStoreHeader.Size) {
       DEBUG ((
         DEBUG_ERROR,
         "%a: invalid variable size: 0x%Lx + 0x%Lx + 0x%x + 0x%x > 0x%x\n",
         __func__,
         (UINT64)VarOffset,
-        (UINT64)(sizeof (*VarHeader)),
-        VarHeader->NameSize,
-        VarHeader->DataSize,
-        VariableStoreHeader->Size
+        (UINT64)(sizeof (VarHeader)),
+        VarHeader.NameSize,
+        VarHeader.DataSize,
+        VariableStoreHeader.Size
         ));
       return EFI_NOT_FOUND;
     }
 
-    if (((VarHeader->NameSize & 1) != 0) ||
-        (VarHeader->NameSize < 4))
+    if (((VarHeader.NameSize & 1) != 0) ||
+        (VarHeader.NameSize < 4))
     {
       DEBUG ((DEBUG_ERROR, "%a: invalid name size\n", __func__));
       return EFI_NOT_FOUND;
     }
 
     if (VarName == NULL) {
-      VarName = (VOID *)((UINTN)VariableStoreHeader + VarHeaderEnd);
-      if (VarName[VarHeader->NameSize / 2 - 1] != L'\0') {
+      VarName = (VOID *)((UINTN)Instance->DeviceBaseAddress + VariableStoreHeaderOffset + VarHeaderEnd);
+      if (VarName[VarHeader.NameSize / 2 - 1] != L'\0') {
         DEBUG ((DEBUG_ERROR, "%a: name is not null terminated\n", __func__));
         return EFI_NOT_FOUND;
       }
@@ -387,9 +427,9 @@ ValidateFvHeader (
       "%a: +0x%04Lx: name=0x%x data=0x%x guid=%g '%s' (%a)\n",
       __func__,
       (UINT64)VarOffset,
-      VarHeader->NameSize,
-      VarHeader->DataSize,
-      &VarHeader->VendorGuid,
+      VarHeader.NameSize,
+      VarHeader.DataSize,
+      &VarHeader.VendorGuid,
       VarName,
       VarState
       ));

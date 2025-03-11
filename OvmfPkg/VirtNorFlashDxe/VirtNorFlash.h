@@ -342,4 +342,11 @@ NorFlashVirtualNotifyEvent (
   IN VOID       *Context
   );
 
+VOID
+ReadMem (
+  OUT VOID      *Buffer,
+  IN CONST VOID *Src,
+  IN UINTN      Len
+);
+
 #endif /* __VIRT_NOR_FLASH__ */

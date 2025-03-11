@@ -6,6 +6,7 @@ SPDX-License-Identifier: BSD-2-Clause-Patent
 
 **/
 
+#include <Library/IoLib.h>
 #include "VariableNonVolatile.h"
 #include "VariableParsing.h"
 
@@ -120,6 +121,20 @@ InitEmuNonVolatileVariableStore (
   return EFI_SUCCESS;
 }
 
+VOID
+ReadMem (
+  OUT VOID      *Buffer,
+  IN CONST VOID *Src,
+  IN UINTN      Len
+)
+{
+  UINTN i;
+  for (i = 0; i < Len; i++) {
+    *((UINT8*)Buffer + i) = MmioRead8((UINTN)((UINT8*)Src + i));
+  }
+}
+
+
 /**
   Init real non-volatile variable store.
 
@@ -175,7 +190,7 @@ InitRealNonVolatileVariableStore (
   //
   // Copy NV storage data to the memory buffer.
   //
-  CopyMem (NvStorageData, (UINT8 *)(UINTN)NvStorageBase, NvStorageSize);
+  ReadMem (NvStorageData, (UINT8 *)(UINTN)NvStorageBase, NvStorageSize);
 
   Status = GetFtwProtocol ((VOID **)&FtwProtocol);
   //

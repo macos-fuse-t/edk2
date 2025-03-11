@@ -40,6 +40,7 @@
   UefiLib
   UefiRuntimeLib
   VirtNorFlashPlatformLib
+  PcdLib
 
 [Guids]
   gEdkiiNvVarStoreFormattedGuid     ## PRODUCES ## PROTOCOL

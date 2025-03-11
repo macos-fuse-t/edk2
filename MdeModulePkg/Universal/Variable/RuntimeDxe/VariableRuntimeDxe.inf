@@ -75,6 +75,7 @@
   VariablePolicyLib
   VariablePolicyHelperLib
   SafeIntLib
+  IoLib
 
 [Protocols]
   gEfiFirmwareVolumeBlockProtocolGuid           ## CONSUMES

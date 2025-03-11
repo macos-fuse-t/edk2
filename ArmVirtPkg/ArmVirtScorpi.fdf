@@ -69,7 +69,7 @@ DATA = {
 gArmTokenSpaceGuid.PcdFvBaseAddress|gArmTokenSpaceGuid.PcdFvSize
 FV = FVMAIN_COMPACT
 
-!include VarStore.fdf.inc
+!include ScorpiVarStore.fdf.inc
 
 ################################################################################
 #
@@ -108,6 +108,8 @@ READ_LOCK_STATUS   = TRUE
   INF OvmfPkg/Fdt/VirtioFdtDxe/VirtioFdtDxe.inf
   INF EmbeddedPkg/Drivers/FdtClientDxe/FdtClientDxe.inf
   INF OvmfPkg/Fdt/HighMemDxe/HighMemDxe.inf
+  INF OvmfPkg/VirtNorFlashDxe/VirtNorFlashDxe.inf
+  INF ArmVirtPkg/ScorpiPlatformDxe/ScorpiPlatformDxe.inf
 
   #
   # PI DXE Drivers producing Architectural Protocols (EFI Services)

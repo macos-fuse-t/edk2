@@ -455,7 +455,7 @@ NorFlashReadBlocks (
   SEND_NOR_COMMAND (Instance->DeviceBaseAddress, 0, P30_CMD_READ_ARRAY);
 
   // Readout the data
-  CopyMem (Buffer, (VOID *)StartAddress, BufferSizeInBytes);
+  ReadMem (Buffer, (VOID *)StartAddress, BufferSizeInBytes);
 
   return EFI_SUCCESS;
 }
@@ -497,7 +497,7 @@ NorFlashRead (
   SEND_NOR_COMMAND (Instance->DeviceBaseAddress, 0, P30_CMD_READ_ARRAY);
 
   // Readout the data
-  CopyMem (Buffer, (VOID *)(StartAddress + Offset), BufferSizeInBytes);
+  ReadMem (Buffer, (VOID *)(StartAddress + Offset), BufferSizeInBytes);
 
   return EFI_SUCCESS;
 }
