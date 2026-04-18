@@ -47,4 +47,21 @@ ArmGicMsiFrameInfoParser (
   IN        INT32                      FdtBranch
   );
 
+/** CM_ARM_GIC_MSI_FRAME_INFO parser function for GICv3 MBI.
+
+  @param [in]  FdtParserHandle A handle to the parser instance.
+  @param [in]  FdtBranch       GICv3 interrupt-controller node to parse.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           Not found.
+**/
+EFI_STATUS
+EFIAPI
+ArmGicMbiFrameInfoParser (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        INT32                      FdtBranch
+  );
+
 #endif // ARM_GIC_MSI_FRAME_PARSER_H_

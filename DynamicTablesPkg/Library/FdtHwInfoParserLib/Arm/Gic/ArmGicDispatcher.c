@@ -192,6 +192,15 @@ ArmGicDispatcher (
         return Status;
       }
 
+      // Parse the Gic MBI information of the interrupt-controller node.
+      Status = ArmGicMbiFrameInfoParser (FdtParserHandle, IntcNode);
+      if (EFI_ERROR (Status)  &&
+          (Status != EFI_NOT_FOUND))
+      {
+        ASSERT (0);
+        return Status;
+      }
+
       break;
     }
     case 2:

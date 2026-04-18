@@ -30,6 +30,9 @@ STATIC CONST COMPATIBILITY_INFO  MsiFrameCompatibleInfo = {
   MsiFrameCompatibleStr
 };
 
+#define GIC_MSI_FRAME_SPI_COUNT_BASE_SELECT  BIT0
+#define GIC_SPI_MAX_INTID                    1019
+
 /** Parse a Msi frame node.
 
   @param [in]  Fdt            Pointer to a Flattened Device Tree (Fdt).
@@ -91,6 +94,157 @@ MsiFrameNodeParser (
   }
 
   MsiFrameInfo->GicMsiFrameId = MsiFrameId;
+
+  return EFI_SUCCESS;
+}
+
+/** Parse a GICv3 MBI frame from an interrupt-controller node.
+
+  @param [in]  Fdt            Pointer to a Flattened Device Tree (Fdt).
+  @param [in]  IntcNode       Interrupt-controller node.
+  @param [in]  MsiFrameId     Frame ID.
+  @param [out] MsiFrameInfo   The CM_ARM_GIC_MSI_FRAME_INFO to populate.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           Not found.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+MbiFrameNodeParser (
+  IN  CONST VOID                 *Fdt,
+  IN  INT32                      IntcNode,
+  IN  UINT32                     MsiFrameId,
+  OUT CM_ARM_GIC_MSI_FRAME_INFO  *MsiFrameInfo
+  )
+{
+  EFI_STATUS    Status;
+  INT32         AddressCells;
+  CONST UINT32  *Data;
+  INT32         DataSize;
+  UINT32        SPIBase;
+  UINT32        SPICount;
+
+  if ((Fdt == NULL) ||
+      (MsiFrameInfo == NULL))
+  {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (!FdtNodeHasProperty (Fdt, IntcNode, "msi-controller")) {
+    return EFI_NOT_FOUND;
+  }
+
+  Data = fdt_getprop (Fdt, IntcNode, "mbi-ranges", &DataSize);
+  if (Data == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  if (DataSize < (INT32)(2 * sizeof (UINT32))) {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  SPIBase  = fdt32_to_cpu (Data[0]);
+  SPICount = fdt32_to_cpu (Data[1]);
+  if ((SPIBase > MAX_UINT16) ||
+      (SPICount > MAX_UINT16) ||
+      (SPICount == 0))
+  {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  if (SPIBase + SPICount > GIC_SPI_MAX_INTID) {
+    //
+    // Linux GICv2m validates the ACPI frame as base + count <= max INTID,
+    // so leave the last SPI unused when the FDT MBI range reaches INTID 1019.
+    //
+    SPICount = GIC_SPI_MAX_INTID - SPIBase;
+  }
+
+  ZeroMem (MsiFrameInfo, sizeof (CM_ARM_GIC_MSI_FRAME_INFO));
+  MsiFrameInfo->GicMsiFrameId = MsiFrameId;
+  MsiFrameInfo->Flags         = GIC_MSI_FRAME_SPI_COUNT_BASE_SELECT;
+  MsiFrameInfo->SPIBase       = (UINT16)SPIBase;
+  MsiFrameInfo->SPICount      = (UINT16)SPICount;
+
+  Data = fdt_getprop (Fdt, IntcNode, "mbi-alias", &DataSize);
+  if (Data == NULL) {
+    return MsiFrameNodeParser (Fdt, IntcNode, MsiFrameId, MsiFrameInfo);
+  }
+
+  Status = FdtGetParentAddressInfo (Fdt, IntcNode, &AddressCells, NULL);
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
+
+  if ((AddressCells < 1) ||
+      (AddressCells > 2) ||
+      (DataSize < (INT32)(AddressCells * sizeof (UINT32))))
+  {
+    ASSERT (0);
+    return EFI_ABORTED;
+  }
+
+  if (AddressCells == 2) {
+    MsiFrameInfo->PhysicalBaseAddress =
+      (((UINT64)fdt32_to_cpu (Data[0])) << 32) | fdt32_to_cpu (Data[1]);
+  } else {
+    MsiFrameInfo->PhysicalBaseAddress = fdt32_to_cpu (Data[0]);
+  }
+
+  return EFI_SUCCESS;
+}
+
+/** CM_ARM_GIC_MSI_FRAME_INFO parser function for GICv3 MBI.
+
+  @param [in]  FdtParserHandle A handle to the parser instance.
+  @param [in]  FdtBranch       GICv3 interrupt-controller node to parse.
+
+  @retval EFI_SUCCESS             The function completed successfully.
+  @retval EFI_ABORTED             An error occurred.
+  @retval EFI_INVALID_PARAMETER   Invalid parameter.
+  @retval EFI_NOT_FOUND           Not found.
+**/
+EFI_STATUS
+EFIAPI
+ArmGicMbiFrameInfoParser (
+  IN  CONST FDT_HW_INFO_PARSER_HANDLE  FdtParserHandle,
+  IN        INT32                      FdtBranch
+  )
+{
+  EFI_STATUS                 Status;
+  CM_ARM_GIC_MSI_FRAME_INFO  MsiFrameInfo;
+  VOID                       *Fdt;
+
+  if (FdtParserHandle == NULL) {
+    ASSERT (0);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Fdt = FdtParserHandle->Fdt;
+
+  Status = MbiFrameNodeParser (Fdt, FdtBranch, 0, &MsiFrameInfo);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = AddSingleCmObj (
+             FdtParserHandle,
+             CREATE_CM_ARM_OBJECT_ID (EArmObjGicMsiFrameInfo),
+             &MsiFrameInfo,
+             sizeof (CM_ARM_GIC_MSI_FRAME_INFO),
+             NULL
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT (0);
+    return Status;
+  }
 
   return EFI_SUCCESS;
 }

@@ -616,6 +616,37 @@ ErrorHandler:
 }
 
 /**
+  Check whether a GIC ITS node was described by the hardware information parser.
+
+  @param [in] PlatformRepo  Pointer to the platform repository.
+
+  @retval TRUE   A GIC ITS node is present.
+  @retval FALSE  No GIC ITS node is present.
+**/
+STATIC
+BOOLEAN
+PlatformHasGicIts (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
+  )
+{
+  EFI_STATUS         Status;
+  CM_OBJ_DESCRIPTOR  CmObjDesc;
+
+  if (PlatformRepo == NULL) {
+    return FALSE;
+  }
+
+  Status = DynamicPlatRepoGetObject (
+             PlatformRepo->DynamicPlatformRepo,
+             CREATE_CM_ARM_OBJECT_ID (EArmObjGicItsInfo),
+             CM_NULL_TOKEN,
+             &CmObjDesc
+             );
+
+  return (!EFI_ERROR (Status) && (CmObjDesc.Count != 0));
+}
+
+/**
   Return a standard namespace object.
 
   @param [in]      This        Pointer to the Configuration Manager Protocol.
@@ -642,6 +673,7 @@ GetStandardNameSpaceObject (
   EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo;
   UINTN                           AcpiTableCount;
   CM_OBJ_DESCRIPTOR               CmObjDesc;
+  BOOLEAN                         IncludeIortTable;
 
   if ((This == NULL) || (CmObject == NULL)) {
     ASSERT (This != NULL);
@@ -665,6 +697,7 @@ GetStandardNameSpaceObject (
 
     case EStdObjAcpiTableList:
       AcpiTableCount = ARRAY_SIZE (PlatformRepo->CmAcpiTableList);
+      IncludeIortTable = TRUE;
 
       //
       // Get Pci config space information.
@@ -684,6 +717,7 @@ GetStandardNameSpaceObject (
         // Therefore, reduce the table count by 3.
         //
         AcpiTableCount -= 3;
+        IncludeIortTable = FALSE;
       } else if (EFI_ERROR (Status)) {
         ASSERT_EFI_ERROR (Status);
         return Status;
@@ -703,9 +737,13 @@ GetStandardNameSpaceObject (
         return Status;
       }
 
-      if (((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion < 3) {
+      if (IncludeIortTable &&
+          ((((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion < 3) ||
+           !PlatformHasGicIts (PlatformRepo)))
+      {
         //
-        // IORT is only required for GicV3/4
+        // IORT is only needed when describing an ITS-backed PCI MSI topology.
+        // A GIC MSI frame is advertised through MADT instead.
         //
         AcpiTableCount -= 1;
       }
@@ -850,6 +888,10 @@ GetArmNameSpaceObject (
   //
   switch (GET_CM_OBJECT_ID (CmObjectId)) {
     case EArmObjItsGroup:
+      if (!PlatformHasGicIts (PlatformRepo)) {
+        break;
+      }
+
       Status = HandleCmObject (
                  CmObjectId,
                  &PlatformRepo->ItsGroupInfo,
@@ -860,6 +902,10 @@ GetArmNameSpaceObject (
       break;
 
     case EArmObjGicItsIdentifierArray:
+      if (!PlatformHasGicIts (PlatformRepo)) {
+        break;
+      }
+
       Status = HandleCmObjectRefByToken (
                  This,
                  CmObjectId,
@@ -873,6 +919,10 @@ GetArmNameSpaceObject (
       break;
 
     case EArmObjRootComplex:
+      if (!PlatformHasGicIts (PlatformRepo)) {
+        break;
+      }
+
       Status = HandleCmObject (
                  CmObjectId,
                  &PlatformRepo->RootComplexInfo,
@@ -883,6 +933,10 @@ GetArmNameSpaceObject (
       break;
 
     case EArmObjIdMappingArray:
+      if (!PlatformHasGicIts (PlatformRepo)) {
+        break;
+      }
+
       Status = HandleCmObjectRefByToken (
                  This,
                  CmObjectId,
