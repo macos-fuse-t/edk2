@@ -40,6 +40,12 @@
   #
   gArmVirtTokenSpaceGuid.PcdTpm2SupportEnabled|FALSE|BOOLEAN|0x00000004
 
+[PcdsDynamic, PcdsDynamicEx]
+  #
+  # Size of the discovered TPM2 MMIO window.
+  #
+  gArmVirtTokenSpaceGuid.PcdTpmMmioSize|0x0|UINT64|0x00000006
+
 [PcdsFixedAtBuild, PcdsPatchableInModule]
   ##
   # This is the physical address of Rsdp which is the core struct of Acpi.

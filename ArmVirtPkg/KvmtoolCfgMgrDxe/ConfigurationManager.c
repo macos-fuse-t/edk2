@@ -14,12 +14,15 @@
 #include <IndustryStandard/IoRemappingTable.h>
 #include <IndustryStandard/MemoryMappedConfigurationSpaceAccessTable.h>
 #include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
+#include <IndustryStandard/Tpm2Acpi.h>
+#include <Library/AmlLib/AmlLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DynamicPlatRepoLib.h>
 #include <Library/HobLib.h>
 #include <Library/HwInfoParserLib.h>
 #include <Library/IoLib.h>
+#include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/TableHelperLib.h>
 #include <Library/UefiBootServicesTableLib.h>
@@ -141,7 +144,22 @@ EDKII_PLATFORM_REPOSITORY_INFO  mKvmtoolPlatRepositoryInfo = {
       NULL,
       TRUE
     },
+    //
+    // TPM2 Table
+    //
+    {
+      EFI_ACPI_6_4_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE,
+      EFI_TPM2_ACPI_TABLE_REVISION_4,
+      CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdTpm2),
+      NULL,
+      TRUE
+    },
   },
+
+  //
+  // Filtered ACPI Table List
+  //
+  { { 0 } },
 
   //
   // Power management profile information
@@ -518,6 +536,11 @@ CleanupPlatformRepository (
 
   PlatformRepo = This->PlatRepoInfo;
 
+  if (PlatformRepo->DsdtTable != NULL) {
+    FreePool (PlatformRepo->DsdtTable);
+    PlatformRepo->DsdtTable = NULL;
+  }
+
   //
   // Shutdown the dynamic repo and free all objects.
   //
@@ -536,6 +559,185 @@ CleanupPlatformRepository (
   }
 
   return Status;
+}
+
+/**
+  Build a DSDT describing the TPM2 ACPI device.
+
+  @param [in] PlatformRepo  Pointer to the platform repository.
+
+  @retval EFI_SUCCESS           Success, including when no TPM is present.
+  @retval EFI_OUT_OF_RESOURCES  An allocation has failed.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+BuildDsdtTable (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
+  )
+{
+  EFI_STATUS              Status;
+  AML_ROOT_NODE_HANDLE    RootNode;
+  AML_OBJECT_NODE_HANDLE  ScopeNode;
+  AML_OBJECT_NODE_HANDLE  TpmNode;
+  AML_OBJECT_NODE_HANDLE  CrsNode;
+  UINT64                  TpmBase;
+  UINT64                  TpmSize;
+
+  if ((PlatformRepo == NULL) || !FeaturePcdGet (PcdTpm2SupportEnabled)) {
+    return EFI_SUCCESS;
+  }
+
+  TpmBase = PcdGet64 (PcdTpmBaseAddress);
+  TpmSize = PcdGet64 (PcdTpmMmioSize);
+  if ((TpmBase == 0) || (TpmSize == 0)) {
+    return EFI_SUCCESS;
+  }
+
+  RootNode  = NULL;
+  ScopeNode = NULL;
+  TpmNode   = NULL;
+  CrsNode   = NULL;
+
+  Status = AmlCodeGenDefinitionBlock (
+             "DSDT",
+             "ARMLTD",
+             "ARM-KVMT",
+             1,
+             &RootNode
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    return Status;
+  }
+
+  Status = AmlCodeGenScope ("\\_SB_", RootNode, &ScopeNode);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenDevice ("TPM0", ScopeNode, &TpmNode);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenNameString ("_HID", "MSFT0101", TpmNode, NULL);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenNameInteger ("_STA", 0x0F, TpmNode, NULL);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenNameInteger ("_UID", 0, TpmNode, NULL);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenNameUnicodeString (
+             "_STR",
+             L"TPM 2.0 Device",
+             TpmNode,
+             NULL
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenNameResourceTemplate ("_CRS", TpmNode, &CrsNode);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlCodeGenRdMemory32Fixed (
+             TRUE,
+             (UINT32)TpmBase,
+             (UINT32)TpmSize,
+             CrsNode,
+             NULL
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  Status = AmlSerializeDefinitionBlock (
+             RootNode,
+             &PlatformRepo->DsdtTable
+             );
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto Exit;
+  }
+
+  DEBUG ((DEBUG_INFO, "%a: TPM2 DSDT device @ 0x%lx size 0x%lx\n", __func__, TpmBase, TpmSize));
+
+Exit:
+  if (RootNode != NULL) {
+    AmlDeleteTree (RootNode);
+  }
+
+  return Status;
+}
+
+/**
+  Add TPM2 interface information when TPM2 support is enabled and a TPM base
+  address was discovered by platform initialization.
+
+  @param [in] PlatformRepo  Pointer to the platform repository.
+
+  @retval EFI_SUCCESS           Success, including when no TPM is present.
+  @retval EFI_OUT_OF_RESOURCES  An allocation has failed.
+**/
+STATIC
+EFI_STATUS
+EFIAPI
+AddTpm2InterfaceInfo (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
+  )
+{
+  CM_ARCH_COMMON_TPM2_INTERFACE_INFO  Tpm2Info;
+  CM_OBJ_DESCRIPTOR                   CmObjDesc;
+  UINT64                              TpmBase;
+  UINT64                              TpmSize;
+
+  if ((PlatformRepo == NULL) || !FeaturePcdGet (PcdTpm2SupportEnabled)) {
+    return EFI_SUCCESS;
+  }
+
+  TpmBase = PcdGet64 (PcdTpmBaseAddress);
+  TpmSize = PcdGet64 (PcdTpmMmioSize);
+  if ((TpmBase == 0) || (TpmSize == 0)) {
+    return EFI_SUCCESS;
+  }
+
+  ZeroMem (&Tpm2Info, sizeof (Tpm2Info));
+  Tpm2Info.PlatformClass        = 0;
+  Tpm2Info.AddressOfControlArea = TpmBase + 0x40;
+  Tpm2Info.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
+  Tpm2Info.StartMethodParametersSize = 0;
+
+  CmObjDesc.ObjectId = CREATE_CM_ARCH_COMMON_OBJECT_ID (EArchCommonObjTpm2InterfaceInfo);
+  CmObjDesc.Size     = sizeof (Tpm2Info);
+  CmObjDesc.Data     = &Tpm2Info;
+  CmObjDesc.Count    = 1;
+
+  DEBUG ((DEBUG_INFO, "%a: TPM2 CRB @ 0x%lx\n", __func__, TpmBase));
+
+  return DynPlatRepoAddObject (
+           PlatformRepo->DynamicPlatformRepo,
+           &CmObjDesc,
+           NULL
+           );
 }
 
 /**
@@ -602,6 +804,18 @@ InitializePlatformRepository (
     goto ErrorHandler;
   }
 
+  Status = AddTpm2InterfaceInfo (PlatformRepo);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto ErrorHandler;
+  }
+
+  Status = BuildDsdtTable (PlatformRepo);
+  if (EFI_ERROR (Status)) {
+    ASSERT_EFI_ERROR (Status);
+    goto ErrorHandler;
+  }
+
   Status = DynamicPlatRepoFinalise (PlatformRepo->DynamicPlatformRepo);
   if (EFI_ERROR (Status)) {
     ASSERT_EFI_ERROR (Status);
@@ -647,6 +861,73 @@ PlatformHasGicIts (
 }
 
 /**
+  Check whether PCI configuration space was described by the hardware
+  information parser.
+
+  @param [in] PlatformRepo  Pointer to the platform repository.
+
+  @retval TRUE   PCI configuration space is present.
+  @retval FALSE  PCI configuration space is absent.
+**/
+STATIC
+BOOLEAN
+PlatformHasPciConfigSpace (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
+  )
+{
+  EFI_STATUS         Status;
+  CM_OBJ_DESCRIPTOR  CmObjDesc;
+
+  if (PlatformRepo == NULL) {
+    return FALSE;
+  }
+
+  Status = DynamicPlatRepoGetObject (
+             PlatformRepo->DynamicPlatformRepo,
+             CREATE_CM_ARCH_COMMON_OBJECT_ID (
+               EArchCommonObjPciConfigSpaceInfo
+               ),
+             CM_NULL_TOKEN,
+             &CmObjDesc
+             );
+
+  return (!EFI_ERROR (Status) && (CmObjDesc.Count != 0));
+}
+
+/**
+  Check whether TPM2 interface information is present.
+
+  @param [in] PlatformRepo  Pointer to the platform repository.
+
+  @retval TRUE   TPM2 interface information is present.
+  @retval FALSE  TPM2 interface information is absent.
+**/
+STATIC
+BOOLEAN
+PlatformHasTpm2 (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
+  )
+{
+  EFI_STATUS         Status;
+  CM_OBJ_DESCRIPTOR  CmObjDesc;
+
+  if (PlatformRepo == NULL) {
+    return FALSE;
+  }
+
+  Status = DynamicPlatRepoGetObject (
+             PlatformRepo->DynamicPlatformRepo,
+             CREATE_CM_ARCH_COMMON_OBJECT_ID (
+               EArchCommonObjTpm2InterfaceInfo
+               ),
+             CM_NULL_TOKEN,
+             &CmObjDesc
+             );
+
+  return (!EFI_ERROR (Status) && (CmObjDesc.Count != 0));
+}
+
+/**
   Return a standard namespace object.
 
   @param [in]      This        Pointer to the Configuration Manager Protocol.
@@ -671,9 +952,13 @@ GetStandardNameSpaceObject (
 {
   EFI_STATUS                      Status;
   EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo;
+  UINTN                           Index;
   UINTN                           AcpiTableCount;
   CM_OBJ_DESCRIPTOR               CmObjDesc;
+  BOOLEAN                         HasPciConfigSpace;
+  BOOLEAN                         HasTpm2;
   BOOLEAN                         IncludeIortTable;
+  BOOLEAN                         SkipTable;
 
   if ((This == NULL) || (CmObject == NULL)) {
     ASSERT (This != NULL);
@@ -696,62 +981,78 @@ GetStandardNameSpaceObject (
       break;
 
     case EStdObjAcpiTableList:
-      AcpiTableCount = ARRAY_SIZE (PlatformRepo->CmAcpiTableList);
-      IncludeIortTable = TRUE;
+      AcpiTableCount   = 0;
+      HasPciConfigSpace = PlatformHasPciConfigSpace (PlatformRepo);
+      HasTpm2          = PlatformHasTpm2 (PlatformRepo) &&
+                         (PlatformRepo->DsdtTable != NULL);
+      IncludeIortTable = FALSE;
 
-      //
-      // Get Pci config space information.
-      //
-      Status = DynamicPlatRepoGetObject (
-                 PlatformRepo->DynamicPlatformRepo,
-                 CREATE_CM_ARCH_COMMON_OBJECT_ID (
-                   EArchCommonObjPciConfigSpaceInfo
-                   ),
-                 CM_NULL_TOKEN,
-                 &CmObjDesc
-                 );
-      if (Status == EFI_NOT_FOUND) {
-        //
-        // The last 3 tables are for PCIe. If PCIe information is not
-        // present, Kvmtool was launched without the PCIe option.
-        // Therefore, reduce the table count by 3.
-        //
-        AcpiTableCount -= 3;
-        IncludeIortTable = FALSE;
-      } else if (EFI_ERROR (Status)) {
-        ASSERT_EFI_ERROR (Status);
-        return Status;
-      }
-
-      //
-      // Get the Gic version.
-      //
-      Status = DynamicPlatRepoGetObject (
-                 PlatformRepo->DynamicPlatformRepo,
-                 CREATE_CM_ARM_OBJECT_ID (EArmObjGicDInfo),
-                 CM_NULL_TOKEN,
-                 &CmObjDesc
-                 );
-      if (EFI_ERROR (Status)) {
-        ASSERT_EFI_ERROR (Status);
-        return Status;
-      }
-
-      if (IncludeIortTable &&
-          ((((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion < 3) ||
-           !PlatformHasGicIts (PlatformRepo)))
-      {
+      if (HasPciConfigSpace) {
         //
         // IORT is only needed when describing an ITS-backed PCI MSI topology.
         // A GIC MSI frame is advertised through MADT instead.
         //
-        AcpiTableCount -= 1;
+        Status = DynamicPlatRepoGetObject (
+                   PlatformRepo->DynamicPlatformRepo,
+                   CREATE_CM_ARM_OBJECT_ID (EArmObjGicDInfo),
+                   CM_NULL_TOKEN,
+                   &CmObjDesc
+                   );
+        if (EFI_ERROR (Status)) {
+          ASSERT_EFI_ERROR (Status);
+          return Status;
+        }
+
+        IncludeIortTable =
+          (((CM_ARM_GICD_INFO *)CmObjDesc.Data)->GicVersion >= 3) &&
+          PlatformHasGicIts (PlatformRepo);
+      }
+
+      for (Index = 0; Index < ARRAY_SIZE (PlatformRepo->CmAcpiTableList); Index++) {
+        SkipTable = FALSE;
+
+        switch (PlatformRepo->CmAcpiTableList[Index].TableGeneratorId) {
+          case CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdDsdt):
+            break;
+
+          case CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdMcfg):
+          case CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdSsdtPciExpress):
+            SkipTable = !HasPciConfigSpace;
+            break;
+
+          case CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdIort):
+            SkipTable = !IncludeIortTable;
+            break;
+
+          case CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdTpm2):
+            SkipTable = !HasTpm2;
+            break;
+
+          default:
+            break;
+        }
+
+        if (SkipTable) {
+          continue;
+        }
+
+        PlatformRepo->CmAcpiTableListFiltered[AcpiTableCount] =
+          PlatformRepo->CmAcpiTableList[Index];
+        if (HasTpm2 &&
+            (PlatformRepo->CmAcpiTableList[Index].TableGeneratorId ==
+             CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdDsdt)))
+        {
+          PlatformRepo->CmAcpiTableListFiltered[AcpiTableCount].AcpiTableData =
+            PlatformRepo->DsdtTable;
+        }
+
+        AcpiTableCount++;
       }
 
       Status = HandleCmObject (
                  CmObjectId,
-                 PlatformRepo->CmAcpiTableList,
-                 (sizeof (PlatformRepo->CmAcpiTableList[0]) * AcpiTableCount),
+                 PlatformRepo->CmAcpiTableListFiltered,
+                 (sizeof (PlatformRepo->CmAcpiTableListFiltered[0]) * AcpiTableCount),
                  AcpiTableCount,
                  CmObject
                  );

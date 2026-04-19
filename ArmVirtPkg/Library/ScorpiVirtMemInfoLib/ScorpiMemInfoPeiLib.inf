@@ -27,9 +27,14 @@
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
   OvmfPkg/OvmfPkg.dec
+  SecurityPkg/SecurityPkg.dec
+
+[FeaturePcd]
+  gArmVirtTokenSpaceGuid.PcdTpm2SupportEnabled
 
 [LibraryClasses]
   ArmLib
+  BaseLib
   BaseMemoryLib
   DebugLib
   FdtLib
@@ -41,8 +46,16 @@
   gArmTokenSpaceGuid.PcdFvBaseAddress
   gArmTokenSpaceGuid.PcdSystemMemoryBase
   gArmTokenSpaceGuid.PcdSystemMemorySize
+  gEfiSecurityPkgTokenSpaceGuid.PcdActiveTpmInterfaceType
+  gEfiSecurityPkgTokenSpaceGuid.PcdCRBIdleByPass
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmInstanceGuid
+  gArmVirtTokenSpaceGuid.PcdTpmMmioSize
 
 [FixedPcd]
   gArmTokenSpaceGuid.PcdFdSize
   gArmTokenSpaceGuid.PcdFvSize
   gUefiOvmfPkgTokenSpaceGuid.PcdDeviceTreeInitialBaseAddress
+
+[Guids]
+  gEfiTpmDeviceInstanceTpm20DtpmGuid

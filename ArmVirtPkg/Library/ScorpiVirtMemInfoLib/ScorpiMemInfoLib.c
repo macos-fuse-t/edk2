@@ -11,16 +11,148 @@
 #include <Base.h>
 #include <libfdt.h>
 #include <Library/ArmLib.h>
+#include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
+#include <Library/Tpm2DeviceLib.h>
 
+#include <Guid/TpmInstance.h>
 #include <Library/PrePiLib.h>
 
 #include "ScorpiMemInfoLib.h"
 
 SCORPI_MEM_NODE_INFO  ScorpiMemNode[SCORPI_MAX_MEM_NODE_NUM];
+
+STATIC EFI_GUID  mTpm2DtpmGuid = TPM_DEVICE_INTERFACE_TPM20_DTPM;
+
+STATIC
+VOID
+ScorpiDiscoverTpm2 (
+  IN CONST VOID  *DeviceTreeBase
+  )
+{
+  CONST CHAR8   *Compatible;
+  CONST CHAR8   *CompItem;
+  CONST UINT32  *ParentBaseProp;
+  CONST VOID    *RegProp;
+  CONST UINT32  *RegProp32;
+  CONST UINT32  *RangesProp;
+  INT32         Depth;
+  INT32         Len;
+  INT32         Node;
+  INT32         Parent;
+  INT32         Prev;
+  INT32         RangesLen;
+  RETURN_STATUS PcdStatus;
+  UINT64        TpmBase;
+  UINT64        TpmSize;
+  UINTN         TpmAddressSize;
+  UINTN         TpmInstanceGuidSize;
+
+  if (!FeaturePcdGet (PcdTpm2SupportEnabled)) {
+    return;
+  }
+
+  TpmBase        = 0;
+  TpmSize        = 0;
+  TpmAddressSize = 0;
+  Parent         = 0;
+
+  for (Prev = Depth = 0; ; Prev = Node) {
+    Node = fdt_next_node (DeviceTreeBase, Prev, &Depth);
+    if (Node < 0) {
+      break;
+    }
+
+    if (Depth == 1) {
+      Parent = Node;
+    }
+
+    Compatible = fdt_getprop (DeviceTreeBase, Node, "compatible", &Len);
+    for (CompItem = Compatible; (CompItem != NULL) && (CompItem < Compatible + Len);
+         CompItem += 1 + AsciiStrLen (CompItem))
+    {
+      if (AsciiStrCmp (CompItem, "tcg,tpm-tis-mmio") != 0) {
+        continue;
+      }
+
+      RegProp = fdt_getprop (DeviceTreeBase, Node, "reg", &Len);
+      if (RegProp == NULL) {
+        DEBUG ((DEBUG_WARN, "%a: TPM node has no 'reg' property\n", __func__));
+        return;
+      }
+
+      if (Len == 8) {
+        RegProp32      = RegProp;
+        TpmBase        = fdt32_to_cpu (ReadUnaligned32 (RegProp32));
+        TpmSize        = fdt32_to_cpu (ReadUnaligned32 (RegProp32 + 1));
+        TpmAddressSize = sizeof (UINT32);
+      } else if (Len == 16) {
+        TpmBase        = fdt64_to_cpu (ReadUnaligned64 ((CONST UINT64 *)RegProp));
+        TpmSize        = fdt64_to_cpu (ReadUnaligned64 ((CONST UINT64 *)RegProp + 1));
+        TpmAddressSize = sizeof (UINT64);
+      } else {
+        DEBUG ((DEBUG_WARN, "%a: TPM 'reg' property has unexpected size %d\n", __func__, Len));
+        return;
+      }
+
+      if (Depth > 1) {
+        RangesProp = fdt_getprop (DeviceTreeBase, Parent, "ranges", &RangesLen);
+        if (RangesProp == NULL) {
+          DEBUG ((DEBUG_WARN, "%a: TPM parent has no 'ranges' property\n", __func__));
+          return;
+        }
+
+        if (RangesLen != 0) {
+          if (RangesLen != Len + 2 * sizeof (UINT32)) {
+            DEBUG ((
+              DEBUG_WARN,
+              "%a: TPM parent 'ranges' property has unexpected size %d\n",
+              __func__,
+              RangesLen
+              ));
+            return;
+          }
+
+          if (Len == 8) {
+            TpmBase -= fdt32_to_cpu (ReadUnaligned32 (RangesProp));
+          } else {
+            TpmBase -= fdt64_to_cpu (ReadUnaligned64 ((CONST UINT64 *)RangesProp));
+          }
+
+          ParentBaseProp = (CONST UINT32 *)((CONST UINT8 *)RangesProp + TpmAddressSize);
+          TpmBase       += fdt64_to_cpu (ReadUnaligned64 ((CONST UINT64 *)ParentBaseProp));
+        }
+      }
+
+      if ((TpmBase == 0) || (TpmSize == 0)) {
+        DEBUG ((DEBUG_WARN, "%a: invalid TPM base 0x%lx size 0x%lx\n", __func__, TpmBase, TpmSize));
+        return;
+      }
+
+      DEBUG ((DEBUG_INFO, "%a: TPM @ 0x%lx size 0x%lx\n", __func__, TpmBase, TpmSize));
+
+      PcdStatus = PcdSet64S (PcdTpmBaseAddress, TpmBase);
+      ASSERT_RETURN_ERROR (PcdStatus);
+
+      PcdStatus = PcdSet64S (PcdTpmMmioSize, TpmSize);
+      ASSERT_RETURN_ERROR (PcdStatus);
+
+      PcdStatus = PcdSet8S (PcdActiveTpmInterfaceType, Tpm2PtpInterfaceCrb);
+      ASSERT_RETURN_ERROR (PcdStatus);
+
+      PcdStatus = PcdSet8S (PcdCRBIdleByPass, 0);
+      ASSERT_RETURN_ERROR (PcdStatus);
+
+      TpmInstanceGuidSize = sizeof (mTpm2DtpmGuid);
+      PcdStatus           = PcdSetPtrS (PcdTpmInstanceGuid, &TpmInstanceGuidSize, &mTpm2DtpmGuid);
+      ASSERT_RETURN_ERROR (PcdStatus);
+      return;
+    }
+  }
+}
 
 /**
   Get all of memory nodes info from DT. Store all of them into
@@ -38,6 +170,7 @@ ScorpiMemInfoPeiLibConstructor (
 {
   VOID                         *DeviceTreeBase;
   EFI_RESOURCE_ATTRIBUTE_TYPE  ResourceAttributes;
+  EFI_RESOURCE_ATTRIBUTE_TYPE  MmioResourceAttributes;
   INT32                        Node, Prev;
   UINT64                       FirMemNodeBase, FirMemNodeSize;
   UINT64                       CurBase, MemBase;
@@ -60,6 +193,11 @@ ScorpiMemInfoPeiLibConstructor (
                         EFI_RESOURCE_ATTRIBUTE_WRITE_BACK_CACHEABLE |
                         EFI_RESOURCE_ATTRIBUTE_TESTED
                         );
+  MmioResourceAttributes = (
+                            EFI_RESOURCE_ATTRIBUTE_PRESENT |
+                            EFI_RESOURCE_ATTRIBUTE_INITIALIZED |
+                            EFI_RESOURCE_ATTRIBUTE_UNCACHEABLE
+                            );
   DeviceTreeBase = (VOID *)(UINTN)PcdGet64 (PcdDeviceTreeInitialBaseAddress);
   if (DeviceTreeBase == NULL) {
     return EFI_NOT_FOUND;
@@ -71,6 +209,8 @@ ScorpiMemInfoPeiLibConstructor (
   if (fdt_check_header (DeviceTreeBase) != 0) {
     return EFI_NOT_FOUND;
   }
+
+  ScorpiDiscoverTpm2 (DeviceTreeBase);
 
   //
   // Look for the lowest memory node
@@ -153,6 +293,15 @@ ScorpiMemInfoPeiLibConstructor (
       (UINT64)PcdGet32 (PcdFdSize)) <= FirMemNodeBase) ||
     ((UINT64)PcdGet64 (PcdFdBaseAddress) >= (FirMemNodeBase + FirMemNodeSize))
     );
+
+  if ((PcdGet64 (PcdTpmBaseAddress) != 0) && (PcdGet64 (PcdTpmMmioSize) != 0)) {
+    BuildResourceDescriptorHob (
+      EFI_RESOURCE_MEMORY_MAPPED_IO,
+      MmioResourceAttributes,
+      PcdGet64 (PcdTpmBaseAddress),
+      PcdGet64 (PcdTpmMmioSize)
+      );
+  }
 
   return RETURN_SUCCESS;
 }

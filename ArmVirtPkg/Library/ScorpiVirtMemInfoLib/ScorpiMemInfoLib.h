@@ -27,7 +27,7 @@ typedef struct {
 // cover any of the NOR flash banks or PCI resource windows.
 //
 #define MACH_VIRT_PERIPH_BASE  0x10000
-#define MACH_VIRT_PERIPH_SIZE  0x4000
+#define MACH_VIRT_PERIPH_SIZE  0x20000
 
 #define SCORPI_GIC_BASE_ADDR  0x2F000000UL
 #define SCORPI_GIC_SIZE       0xF10000UL

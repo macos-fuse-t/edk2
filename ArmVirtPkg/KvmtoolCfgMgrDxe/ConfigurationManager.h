@@ -63,7 +63,7 @@ typedef EFI_STATUS (*CM_OBJECT_HANDLER_PROC) (
 ///
 /// The number of ACPI tables to install
 ///
-#define PLAT_ACPI_TABLE_COUNT  10
+#define PLAT_ACPI_TABLE_COUNT  11
 
 ///
 /// A structure describing the platform configuration
@@ -79,6 +79,11 @@ typedef struct PlatformRepositoryInfo {
   /// List of ACPI tables
   ///
   CM_STD_OBJ_ACPI_TABLE_INFO                      CmAcpiTableList[PLAT_ACPI_TABLE_COUNT];
+
+  ///
+  /// Filtered list of ACPI tables returned to DynamicTables.
+  ///
+  CM_STD_OBJ_ACPI_TABLE_INFO                      CmAcpiTableListFiltered[PLAT_ACPI_TABLE_COUNT];
 
   ///
   /// Power management profile information
@@ -104,6 +109,11 @@ typedef struct PlatformRepositoryInfo {
   /// Array of DeviceID mapping
   ///
   CM_ARM_ID_MAPPING                               DeviceIdMapping[1];
+
+  ///
+  /// Dynamically generated DSDT with the TPM2 ACPI device.
+  ///
+  EFI_ACPI_DESCRIPTION_HEADER                     *DsdtTable;
 
   ///
   /// Dynamic platform repository.

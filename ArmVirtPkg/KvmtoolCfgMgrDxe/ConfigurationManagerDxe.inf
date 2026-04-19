@@ -33,11 +33,15 @@
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  SecurityPkg/SecurityPkg.dec
 
 [LibraryClasses]
+  AmlLib
   DynamicPlatRepoLib
   HobLib
   HwInfoParserLib
+  MemoryAllocationLib
+  PcdLib
   PrintLib
   TableHelperLib
   UefiBootServicesTableLib
@@ -49,6 +53,11 @@
 
 [Guids]
   gFdtHobGuid
+
+[Pcd]
+  gArmVirtTokenSpaceGuid.PcdTpm2SupportEnabled
+  gArmVirtTokenSpaceGuid.PcdTpmMmioSize
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress
 
 [Depex]
   gEdkiiPlatformHasAcpiGuid
