@@ -36,7 +36,6 @@
   SecurityPkg/SecurityPkg.dec
 
 [LibraryClasses]
-  AmlLib
   DynamicPlatRepoLib
   HobLib
   HwInfoParserLib

@@ -15,7 +15,6 @@
 #include <IndustryStandard/MemoryMappedConfigurationSpaceAccessTable.h>
 #include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
 #include <IndustryStandard/Tpm2Acpi.h>
-#include <Library/AmlLib/AmlLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DynamicPlatRepoLib.h>
@@ -265,6 +264,110 @@ EDKII_PLATFORM_REPOSITORY_INFO  mKvmtoolPlatRepositoryInfo = {
     },
   },
 };
+
+#define DSDT_TPM_BASE_PLACEHOLDER  0x54504D30
+#define DSDT_TPM_SIZE_PLACEHOLDER  0x54504D31
+
+STATIC
+EFI_STATUS
+PatchDsdtSta (
+  IN OUT EFI_ACPI_DESCRIPTION_HEADER  *Dsdt
+  )
+{
+  CONST UINT8  StaPattern[] = { 0x08, 'T', 'S', 'T', 'A', 0x11 };
+  UINT8        *Data;
+  UINT32       Index;
+  UINT32       Offset;
+  UINT32       PatchCount;
+
+  Data       = (UINT8 *)Dsdt;
+  PatchCount = 0;
+
+  for (Index = 0; Index + sizeof (StaPattern) <= Dsdt->Length; Index++) {
+    if (CompareMem (&Data[Index], StaPattern, sizeof (StaPattern)) == 0) {
+      for (Offset = sizeof (StaPattern); (Offset < 16) && (Index + Offset < Dsdt->Length); Offset++) {
+        if (Data[Index + Offset] == 0) {
+          Data[Index + Offset] = 0x0F;
+          PatchCount++;
+          break;
+        }
+      }
+    }
+  }
+
+  if (PatchCount != 1) {
+    DEBUG ((DEBUG_ERROR, "%a: found %u TPM _STA patch sites\n", __func__, PatchCount));
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+PatchDsdtUint32 (
+  IN OUT EFI_ACPI_DESCRIPTION_HEADER  *Dsdt,
+  IN     UINT32                       OldValue,
+  IN     UINT32                       NewValue
+  )
+{
+  UINT8   OldBytes[sizeof (UINT32)];
+  UINT8   *Data;
+  UINT32  Index;
+  UINT32  PatchCount;
+
+  OldBytes[0] = (UINT8)OldValue;
+  OldBytes[1] = (UINT8)(OldValue >> 8);
+  OldBytes[2] = (UINT8)(OldValue >> 16);
+  OldBytes[3] = (UINT8)(OldValue >> 24);
+
+  Data       = (UINT8 *)Dsdt;
+  PatchCount = 0;
+
+  for (Index = 0; Index + sizeof (OldBytes) <= Dsdt->Length; Index++) {
+    if (CompareMem (&Data[Index], OldBytes, sizeof (OldBytes)) == 0) {
+      Data[Index]     = (UINT8)NewValue;
+      Data[Index + 1] = (UINT8)(NewValue >> 8);
+      Data[Index + 2] = (UINT8)(NewValue >> 16);
+      Data[Index + 3] = (UINT8)(NewValue >> 24);
+      PatchCount++;
+    }
+  }
+
+  if (PatchCount != 1) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "%a: found %u patch sites for 0x%08x\n",
+      __func__,
+      PatchCount,
+      OldValue
+      ));
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+VOID
+UpdateAcpiChecksum (
+  IN OUT EFI_ACPI_DESCRIPTION_HEADER  *Table
+  )
+{
+  UINT8   *Data;
+  UINT8   Sum;
+  UINT32  Index;
+
+  Data            = (UINT8 *)Table;
+  Sum             = 0;
+  Table->Checksum = 0;
+
+  for (Index = 0; Index < Table->Length; Index++) {
+    Sum = (UINT8)(Sum + Data[Index]);
+  }
+
+  Table->Checksum = (UINT8)(0 - Sum);
+}
 
 /**
   A helper function for returning the Configuration Manager Objects.
@@ -576,13 +679,11 @@ BuildDsdtTable (
   IN EDKII_PLATFORM_REPOSITORY_INFO  *PlatformRepo
   )
 {
-  EFI_STATUS              Status;
-  AML_ROOT_NODE_HANDLE    RootNode;
-  AML_OBJECT_NODE_HANDLE  ScopeNode;
-  AML_OBJECT_NODE_HANDLE  TpmNode;
-  AML_OBJECT_NODE_HANDLE  CrsNode;
-  UINT64                  TpmBase;
-  UINT64                  TpmSize;
+  EFI_STATUS                   Status;
+  EFI_ACPI_DESCRIPTION_HEADER  *Dsdt;
+  EFI_ACPI_DESCRIPTION_HEADER  *DsdtTemplate;
+  UINT64                       TpmBase;
+  UINT64                       TpmSize;
 
   if ((PlatformRepo == NULL) || !FeaturePcdGet (PcdTpm2SupportEnabled)) {
     return EFI_SUCCESS;
@@ -594,96 +695,39 @@ BuildDsdtTable (
     return EFI_SUCCESS;
   }
 
-  RootNode  = NULL;
-  ScopeNode = NULL;
-  TpmNode   = NULL;
-  CrsNode   = NULL;
-
-  Status = AmlCodeGenDefinitionBlock (
-             "DSDT",
-             "ARMLTD",
-             "ARM-KVMT",
-             1,
-             &RootNode
-             );
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    return Status;
+  DsdtTemplate = (EFI_ACPI_DESCRIPTION_HEADER *)dsdt_aml_code;
+  Dsdt         = AllocateCopyPool (DsdtTemplate->Length, DsdtTemplate);
+  if (Dsdt == NULL) {
+    return EFI_OUT_OF_RESOURCES;
   }
 
-  Status = AmlCodeGenScope ("\\_SB_", RootNode, &ScopeNode);
+  Status = PatchDsdtSta (Dsdt);
   if (EFI_ERROR (Status)) {
     ASSERT_EFI_ERROR (Status);
     goto Exit;
   }
 
-  Status = AmlCodeGenDevice ("TPM0", ScopeNode, &TpmNode);
+  Status = PatchDsdtUint32 (Dsdt, DSDT_TPM_BASE_PLACEHOLDER, (UINT32)TpmBase);
   if (EFI_ERROR (Status)) {
     ASSERT_EFI_ERROR (Status);
     goto Exit;
   }
 
-  Status = AmlCodeGenNameString ("_HID", "MSFT0101", TpmNode, NULL);
+  Status = PatchDsdtUint32 (Dsdt, DSDT_TPM_SIZE_PLACEHOLDER, (UINT32)TpmSize);
   if (EFI_ERROR (Status)) {
     ASSERT_EFI_ERROR (Status);
     goto Exit;
   }
 
-  Status = AmlCodeGenNameInteger ("_STA", 0x0F, TpmNode, NULL);
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
-
-  Status = AmlCodeGenNameInteger ("_UID", 0, TpmNode, NULL);
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
-
-  Status = AmlCodeGenNameUnicodeString (
-             "_STR",
-             L"TPM 2.0 Device",
-             TpmNode,
-             NULL
-             );
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
-
-  Status = AmlCodeGenNameResourceTemplate ("_CRS", TpmNode, &CrsNode);
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
-
-  Status = AmlCodeGenRdMemory32Fixed (
-             TRUE,
-             (UINT32)TpmBase,
-             (UINT32)TpmSize,
-             CrsNode,
-             NULL
-             );
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
-
-  Status = AmlSerializeDefinitionBlock (
-             RootNode,
-             &PlatformRepo->DsdtTable
-             );
-  if (EFI_ERROR (Status)) {
-    ASSERT_EFI_ERROR (Status);
-    goto Exit;
-  }
+  UpdateAcpiChecksum (Dsdt);
+  PlatformRepo->DsdtTable = Dsdt;
+  Dsdt                    = NULL;
 
   DEBUG ((DEBUG_INFO, "%a: TPM2 DSDT device @ 0x%lx size 0x%lx\n", __func__, TpmBase, TpmSize));
 
 Exit:
-  if (RootNode != NULL) {
-    AmlDeleteTree (RootNode);
+  if (Dsdt != NULL) {
+    FreePool (Dsdt);
   }
 
   return Status;
