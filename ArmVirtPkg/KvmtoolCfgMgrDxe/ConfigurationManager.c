@@ -695,6 +695,17 @@ BuildDsdtTable (
     return EFI_SUCCESS;
   }
 
+  if ((TpmBase > MAX_UINT32) || (TpmSize > MAX_UINT32)) {
+    DEBUG ((
+      DEBUG_ERROR,
+      "%a: TPM2 address does not fit Memory32Fixed: base 0x%lx size 0x%lx\n",
+      __func__,
+      TpmBase,
+      TpmSize
+      ));
+    return EFI_UNSUPPORTED;
+  }
+
   DsdtTemplate = (EFI_ACPI_DESCRIPTION_HEADER *)dsdt_aml_code;
   Dsdt         = AllocateCopyPool (DsdtTemplate->Length, DsdtTemplate);
   if (Dsdt == NULL) {
@@ -765,17 +776,40 @@ AddTpm2InterfaceInfo (
   }
 
   ZeroMem (&Tpm2Info, sizeof (Tpm2Info));
-  Tpm2Info.PlatformClass        = 0;
-  Tpm2Info.AddressOfControlArea = TpmBase + 0x40;
-  Tpm2Info.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
+  Tpm2Info.PlatformClass              = 0;
+  Tpm2Info.AddressOfControlArea       = TpmBase + 0x40;
+  Tpm2Info.StartMethod                = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
   Tpm2Info.StartMethodParametersSize = 0;
+  Tpm2Info.Laml                       = PcdGet32 (PcdTpm2AcpiTableLaml);
+  Tpm2Info.Lasa                       = PcdGet64 (PcdTpm2AcpiTableLasa);
+  if ((Tpm2Info.Laml == 0) || (Tpm2Info.Lasa == 0)) {
+    if ((Tpm2Info.Laml != 0) || (Tpm2Info.Lasa != 0)) {
+      DEBUG ((
+        DEBUG_WARN,
+        "%a: ignoring incomplete TPM2 event log allocation: LAML 0x%x, LASA 0x%lx\n",
+        __func__,
+        Tpm2Info.Laml,
+        Tpm2Info.Lasa
+        ));
+    }
+
+    Tpm2Info.Laml = 0;
+    Tpm2Info.Lasa = 0;
+  }
 
   CmObjDesc.ObjectId = CREATE_CM_ARCH_COMMON_OBJECT_ID (EArchCommonObjTpm2InterfaceInfo);
   CmObjDesc.Size     = sizeof (Tpm2Info);
   CmObjDesc.Data     = &Tpm2Info;
   CmObjDesc.Count    = 1;
 
-  DEBUG ((DEBUG_INFO, "%a: TPM2 CRB @ 0x%lx\n", __func__, TpmBase));
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: TPM2 CRB @ 0x%lx, LAML 0x%x, LASA 0x%lx\n",
+    __func__,
+    TpmBase,
+    Tpm2Info.Laml,
+    Tpm2Info.Lasa
+    ));
 
   return DynPlatRepoAddObject (
            PlatformRepo->DynamicPlatformRepo,

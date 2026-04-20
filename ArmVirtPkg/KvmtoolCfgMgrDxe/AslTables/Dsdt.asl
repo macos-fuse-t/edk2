@@ -38,7 +38,7 @@ DefinitionBlock ("DsdtTable.aml", "DSDT", 2, "ARMLTD", "ARM-KVMT", 1) {
       }
 
       OperationRegion (TPP2, SystemMemory, 0x00025100, 0x5A)
-      Field (TPP2, AnyAcc, NoLock, Preserve) {
+      Field (TPP2, ByteAcc, NoLock, Preserve) {
         PPIN, 8,
         PPIP, 32,
         PPRP, 32,

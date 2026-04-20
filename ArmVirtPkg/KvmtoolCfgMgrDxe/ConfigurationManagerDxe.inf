@@ -57,6 +57,8 @@
   gArmVirtTokenSpaceGuid.PcdTpm2SupportEnabled
   gArmVirtTokenSpaceGuid.PcdTpmMmioSize
   gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLaml
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLasa
 
 [Depex]
   gEdkiiPlatformHasAcpiGuid

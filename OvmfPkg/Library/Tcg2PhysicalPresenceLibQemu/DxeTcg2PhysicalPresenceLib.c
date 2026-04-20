@@ -44,6 +44,75 @@ EFI_HII_HANDLE  mTcg2PpStringPackHandle;
 
 STATIC volatile QEMU_TPM_PPI  *mPpi;
 
+STATIC
+UINT8
+QemuTpmPpiRead8 (
+  IN UINTN  Offset
+  )
+{
+  volatile UINT8  *Ppi;
+
+  Ppi = (volatile UINT8 *)mPpi;
+  return Ppi[Offset];
+}
+
+STATIC
+VOID
+QemuTpmPpiWrite8 (
+  IN UINTN  Offset,
+  IN UINT8  Value
+  )
+{
+  volatile UINT8  *Ppi;
+
+  Ppi         = (volatile UINT8 *)mPpi;
+  Ppi[Offset] = Value;
+}
+
+STATIC
+VOID
+QemuTpmPpiWriteFunc (
+  IN UINTN  Function,
+  IN UINT8  Value
+  )
+{
+  QemuTpmPpiWrite8 (OFFSET_OF (QEMU_TPM_PPI, Func) + Function, Value);
+}
+
+STATIC
+UINT32
+QemuTpmPpiRead32 (
+  IN UINTN  Offset
+  )
+{
+  return (UINT32)QemuTpmPpiRead8 (Offset) |
+         ((UINT32)QemuTpmPpiRead8 (Offset + 1) << 8) |
+         ((UINT32)QemuTpmPpiRead8 (Offset + 2) << 16) |
+         ((UINT32)QemuTpmPpiRead8 (Offset + 3) << 24);
+}
+
+STATIC
+VOID
+QemuTpmPpiWrite32 (
+  IN UINTN   Offset,
+  IN UINT32  Value
+  )
+{
+  QemuTpmPpiWrite8 (Offset, (UINT8)Value);
+  QemuTpmPpiWrite8 (Offset + 1, (UINT8)(Value >> 8));
+  QemuTpmPpiWrite8 (Offset + 2, (UINT8)(Value >> 16));
+  QemuTpmPpiWrite8 (Offset + 3, (UINT8)(Value >> 24));
+}
+
+#define QEMU_TPM_PPI_READ_FIELD8(Field) \
+  QemuTpmPpiRead8 (OFFSET_OF (QEMU_TPM_PPI, Field))
+#define QEMU_TPM_PPI_WRITE_FIELD8(Field, Value) \
+  QemuTpmPpiWrite8 (OFFSET_OF (QEMU_TPM_PPI, Field), (Value))
+#define QEMU_TPM_PPI_READ_FIELD32(Field) \
+  QemuTpmPpiRead32 (OFFSET_OF (QEMU_TPM_PPI, Field))
+#define QEMU_TPM_PPI_WRITE_FIELD32(Field, Value) \
+  QemuTpmPpiWrite32 (OFFSET_OF (QEMU_TPM_PPI, Field), (Value))
+
 /**
   Reads QEMU PPI config from fw_cfg.
 
@@ -133,27 +202,27 @@ QemuTpmInitPPI (
   }
 
   for (Idx = 0; Idx < ARRAY_SIZE (mPpi->Func); Idx++) {
-    mPpi->Func[Idx] = 0;
+    QemuTpmPpiWriteFunc (Idx, 0);
   }
 
   if (Config.TpmVersion == QEMU_TPM_VERSION_2) {
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_NO_ACTION]         = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_CLEAR]             = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR]      = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2]    = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3]    = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS]     = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_CHANGE_EPS]        = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS]   = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID]  = TPM_PPI_FLAGS;
-    mPpi->Func[TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID] = TPM_PPI_FLAGS;
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_NO_ACTION, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_CLEAR, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_3, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_SET_PCR_BANKS, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_CHANGE_EPS, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_ENABLE_BLOCK_SID, TPM_PPI_FLAGS);
+    QemuTpmPpiWriteFunc (TCG2_PHYSICAL_PRESENCE_DISABLE_BLOCK_SID, TPM_PPI_FLAGS);
   }
 
-  if (mPpi->In == 0) {
-    mPpi->In          = 1;
-    mPpi->Request     = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
-    mPpi->LastRequest = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
-    mPpi->NextStep    = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
+  if (QEMU_TPM_PPI_READ_FIELD8 (In) == 0) {
+    QEMU_TPM_PPI_WRITE_FIELD8 (In, 1);
+    QEMU_TPM_PPI_WRITE_FIELD32 (Request, TCG2_PHYSICAL_PRESENCE_NO_ACTION);
+    QEMU_TPM_PPI_WRITE_FIELD32 (LastRequest, TCG2_PHYSICAL_PRESENCE_NO_ACTION);
+    QEMU_TPM_PPI_WRITE_FIELD8 (NextStep, TCG2_PHYSICAL_PRESENCE_NO_ACTION);
   }
 
   return EFI_SUCCESS;
@@ -683,7 +752,7 @@ Tcg2HaveValidTpmRequest  (
 
   *RequestConfirmed = FALSE;
 
-  if (mPpi->Request <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
+  if (QEMU_TPM_PPI_READ_FIELD32 (Request) <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
     //
     // Need TCG2 protocol.
     //
@@ -693,7 +762,7 @@ Tcg2HaveValidTpmRequest  (
     }
   }
 
-  switch (mPpi->Request) {
+  switch (QEMU_TPM_PPI_READ_FIELD32 (Request)) {
     case TCG2_PHYSICAL_PRESENCE_NO_ACTION:
     case TCG2_PHYSICAL_PRESENCE_LOG_ALL_DIGESTS:
       *RequestConfirmed = TRUE;
@@ -735,7 +804,7 @@ Tcg2ExecutePendingTpmRequest (
 {
   BOOLEAN  RequestConfirmed;
 
-  if (mPpi->Request == TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
+  if (QEMU_TPM_PPI_READ_FIELD32 (Request) == TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
     //
     // No operation request
     //
@@ -746,15 +815,15 @@ Tcg2ExecutePendingTpmRequest (
     //
     // Invalid operation request.
     //
-    if (mPpi->Request <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
-      mPpi->Response = TCG_PP_OPERATION_RESPONSE_SUCCESS;
+    if (QEMU_TPM_PPI_READ_FIELD32 (Request) <= TCG2_PHYSICAL_PRESENCE_NO_ACTION_MAX) {
+      QEMU_TPM_PPI_WRITE_FIELD32 (Response, TCG_PP_OPERATION_RESPONSE_SUCCESS);
     } else {
-      mPpi->Response = TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE;
+      QEMU_TPM_PPI_WRITE_FIELD32 (Response, TCG_PP_OPERATION_RESPONSE_BIOS_FAILURE);
     }
 
-    mPpi->LastRequest      = mPpi->Request;
-    mPpi->Request          = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
-    mPpi->RequestParameter = 0;
+    QEMU_TPM_PPI_WRITE_FIELD32 (LastRequest, QEMU_TPM_PPI_READ_FIELD32 (Request));
+    QEMU_TPM_PPI_WRITE_FIELD32 (Request, TCG2_PHYSICAL_PRESENCE_NO_ACTION);
+    QEMU_TPM_PPI_WRITE_FIELD32 (RequestParameter, 0);
     return;
   }
 
@@ -762,36 +831,39 @@ Tcg2ExecutePendingTpmRequest (
     //
     // Print confirm text and wait for approval.
     //
-    RequestConfirmed = Tcg2UserConfirm (mPpi->Request, mPpi->RequestParameter);
+    RequestConfirmed = Tcg2UserConfirm (QEMU_TPM_PPI_READ_FIELD32 (Request), QEMU_TPM_PPI_READ_FIELD32 (RequestParameter));
   }
 
   //
   // Execute requested physical presence command
   //
-  mPpi->Response = TCG_PP_OPERATION_RESPONSE_USER_ABORT;
+  QEMU_TPM_PPI_WRITE_FIELD32 (Response, TCG_PP_OPERATION_RESPONSE_USER_ABORT);
   if (RequestConfirmed) {
-    mPpi->Response = Tcg2ExecutePhysicalPresence (
-                       PlatformAuth,
-                       mPpi->Request,
-                       mPpi->RequestParameter
-                       );
+    QEMU_TPM_PPI_WRITE_FIELD32 (
+      Response,
+      Tcg2ExecutePhysicalPresence (
+        PlatformAuth,
+        QEMU_TPM_PPI_READ_FIELD32 (Request),
+        QEMU_TPM_PPI_READ_FIELD32 (RequestParameter)
+        )
+      );
   }
 
   //
   // Clear request
   //
-  mPpi->LastRequest      = mPpi->Request;
-  mPpi->Request          = TCG2_PHYSICAL_PRESENCE_NO_ACTION;
-  mPpi->RequestParameter = 0;
+  QEMU_TPM_PPI_WRITE_FIELD32 (LastRequest, QEMU_TPM_PPI_READ_FIELD32 (Request));
+  QEMU_TPM_PPI_WRITE_FIELD32 (Request, TCG2_PHYSICAL_PRESENCE_NO_ACTION);
+  QEMU_TPM_PPI_WRITE_FIELD32 (RequestParameter, 0);
 
-  if (mPpi->Response == TCG_PP_OPERATION_RESPONSE_USER_ABORT) {
+  if (QEMU_TPM_PPI_READ_FIELD32 (Response) == TCG_PP_OPERATION_RESPONSE_USER_ABORT) {
     return;
   }
 
   //
   // Reset system to make new TPM settings in effect
   //
-  switch (mPpi->LastRequest) {
+  switch (QEMU_TPM_PPI_READ_FIELD32 (LastRequest)) {
     case TCG2_PHYSICAL_PRESENCE_CLEAR:
     case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR:
     case TCG2_PHYSICAL_PRESENCE_ENABLE_CLEAR_2:
@@ -806,7 +878,7 @@ Tcg2ExecutePendingTpmRequest (
       break;
 
     default:
-      if (mPpi->Request != TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
+      if (QEMU_TPM_PPI_READ_FIELD32 (Request) != TCG2_PHYSICAL_PRESENCE_NO_ACTION) {
         break;
       }
 
@@ -853,7 +925,7 @@ Tcg2PhysicalPresenceLibProcessRequest (
     return;
   }
 
-  DEBUG ((DEBUG_INFO, "[TPM2PP] PPRequest=%x (PPRequestParameter=%x)\n", mPpi->Request, mPpi->RequestParameter));
+  DEBUG ((DEBUG_INFO, "[TPM2PP] PPRequest=%x (PPRequestParameter=%x)\n", QEMU_TPM_PPI_READ_FIELD32 (Request), QEMU_TPM_PPI_READ_FIELD32 (RequestParameter)));
   Tcg2ExecutePendingTpmRequest (PlatformAuth);
 }
 
@@ -885,8 +957,8 @@ Tcg2PhysicalPresenceLibReturnOperationResponseToOsFunction (
     return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_FAILURE;
   }
 
-  *MostRecentRequest = mPpi->LastRequest;
-  *Response          = mPpi->Response;
+  *MostRecentRequest = QEMU_TPM_PPI_READ_FIELD32 (LastRequest);
+  *Response          = QEMU_TPM_PPI_READ_FIELD32 (Response);
 
   return TCG_PP_RETURN_TPM_OPERATION_RESPONSE_SUCCESS;
 }
@@ -921,8 +993,8 @@ Tcg2PhysicalPresenceLibSubmitRequestToPreOSFunction (
     return TCG_PP_SUBMIT_REQUEST_TO_PREOS_GENERAL_FAILURE;
   }
 
-  mPpi->Request          = OperationRequest;
-  mPpi->RequestParameter = RequestParameter;
+  QEMU_TPM_PPI_WRITE_FIELD32 (Request, OperationRequest);
+  QEMU_TPM_PPI_WRITE_FIELD32 (RequestParameter, RequestParameter);
 
   return TCG_PP_SUBMIT_REQUEST_TO_PREOS_SUCCESS;
 }
