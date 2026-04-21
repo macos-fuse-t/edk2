@@ -35,6 +35,7 @@ ScorpiDiscoverTpm2 (
 {
   CONST CHAR8   *Compatible;
   CONST CHAR8   *CompItem;
+  CONST CHAR8   *TpmInterface;
   CONST UINT32  *ParentBaseProp;
   CONST VOID    *RegProp;
   CONST UINT32  *RegProp32;
@@ -50,6 +51,7 @@ ScorpiDiscoverTpm2 (
   UINT64        TpmSize;
   UINTN         TpmAddressSize;
   UINTN         TpmInstanceGuidSize;
+  UINT8         TpmInterfaceType;
 
   if (!FeaturePcdGet (PcdTpm2SupportEnabled)) {
     return;
@@ -132,7 +134,27 @@ ScorpiDiscoverTpm2 (
         return;
       }
 
-      DEBUG ((DEBUG_INFO, "%a: TPM @ 0x%lx size 0x%lx\n", __func__, TpmBase, TpmSize));
+      TpmInterfaceType = Tpm2PtpInterfaceCrb;
+      TpmInterface     = fdt_getprop (DeviceTreeBase, Node, "scorpi,tpm-interface", &Len);
+      if (TpmInterface == NULL) {
+        DEBUG ((DEBUG_WARN, "%a: TPM interface is missing; assuming CRB\n", __func__));
+      } else if (AsciiStrCmp (TpmInterface, "crb") == 0) {
+        TpmInterfaceType = Tpm2PtpInterfaceCrb;
+      } else if (AsciiStrCmp (TpmInterface, "tis") == 0) {
+        TpmInterfaceType = Tpm2PtpInterfaceTis;
+      } else {
+        DEBUG ((DEBUG_WARN, "%a: unsupported TPM interface '%a'\n", __func__, TpmInterface));
+        return;
+      }
+
+      DEBUG ((
+        DEBUG_INFO,
+        "%a: TPM @ 0x%lx size 0x%lx interface %a\n",
+        __func__,
+        TpmBase,
+        TpmSize,
+        (TpmInterfaceType == Tpm2PtpInterfaceTis) ? "TIS" : "CRB"
+        ));
 
       PcdStatus = PcdSet64S (PcdTpmBaseAddress, TpmBase);
       ASSERT_RETURN_ERROR (PcdStatus);
@@ -140,10 +162,13 @@ ScorpiDiscoverTpm2 (
       PcdStatus = PcdSet64S (PcdTpmMmioSize, TpmSize);
       ASSERT_RETURN_ERROR (PcdStatus);
 
-      PcdStatus = PcdSet8S (PcdActiveTpmInterfaceType, Tpm2PtpInterfaceCrb);
+      PcdStatus = PcdSet8S (PcdActiveTpmInterfaceType, TpmInterfaceType);
       ASSERT_RETURN_ERROR (PcdStatus);
 
-      PcdStatus = PcdSet8S (PcdCRBIdleByPass, 0);
+      PcdStatus = PcdSet8S (
+                    PcdCRBIdleByPass,
+                    (TpmInterfaceType == Tpm2PtpInterfaceCrb) ? 0 : 0xFF
+                    );
       ASSERT_RETURN_ERROR (PcdStatus);
 
       TpmInstanceGuidSize = sizeof (mTpm2DtpmGuid);

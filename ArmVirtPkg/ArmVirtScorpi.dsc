@@ -261,6 +261,7 @@
   gEfiMdePkgTokenSpaceGuid.PcdPciIoTranslation|0
 
   gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress|0x0
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x0000000F
   # Revision 4 adds LAML/LASA and makes Tcg2Dxe allocate the event log
   # as EfiACPIMemoryNVS instead of boot-services memory.
   gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableRev|4

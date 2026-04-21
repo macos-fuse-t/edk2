@@ -24,6 +24,7 @@
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/TableHelperLib.h>
+#include <Library/Tpm2DeviceLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/AcpiTable.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
@@ -762,8 +763,10 @@ AddTpm2InterfaceInfo (
 {
   CM_ARCH_COMMON_TPM2_INTERFACE_INFO  Tpm2Info;
   CM_OBJ_DESCRIPTOR                   CmObjDesc;
+  CONST CHAR8                         *TpmInterfaceName;
   UINT64                              TpmBase;
   UINT64                              TpmSize;
+  UINT8                               TpmInterfaceType;
 
   if ((PlatformRepo == NULL) || !FeaturePcdGet (PcdTpm2SupportEnabled)) {
     return EFI_SUCCESS;
@@ -776,12 +779,29 @@ AddTpm2InterfaceInfo (
   }
 
   ZeroMem (&Tpm2Info, sizeof (Tpm2Info));
+  TpmInterfaceType                    = PcdGet8 (PcdActiveTpmInterfaceType);
   Tpm2Info.PlatformClass              = 0;
-  Tpm2Info.AddressOfControlArea       = TpmBase + 0x40;
-  Tpm2Info.StartMethod                = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
   Tpm2Info.StartMethodParametersSize = 0;
   Tpm2Info.Laml                       = PcdGet32 (PcdTpm2AcpiTableLaml);
   Tpm2Info.Lasa                       = PcdGet64 (PcdTpm2AcpiTableLasa);
+
+  switch (TpmInterfaceType) {
+    case Tpm2PtpInterfaceTis:
+    case Tpm2PtpInterfaceFifo:
+      TpmInterfaceName              = "TIS";
+      Tpm2Info.AddressOfControlArea = 0;
+      Tpm2Info.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_TIS;
+      break;
+    case Tpm2PtpInterfaceCrb:
+      TpmInterfaceName              = "CRB";
+      Tpm2Info.AddressOfControlArea = TpmBase + 0x40;
+      Tpm2Info.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
+      break;
+    default:
+      DEBUG ((DEBUG_ERROR, "%a: unsupported TPM interface type 0x%x\n", __func__, TpmInterfaceType));
+      return EFI_UNSUPPORTED;
+  }
+
   if ((Tpm2Info.Laml == 0) || (Tpm2Info.Lasa == 0)) {
     if ((Tpm2Info.Laml != 0) || (Tpm2Info.Lasa != 0)) {
       DEBUG ((
@@ -804,9 +824,12 @@ AddTpm2InterfaceInfo (
 
   DEBUG ((
     DEBUG_INFO,
-    "%a: TPM2 CRB @ 0x%lx, LAML 0x%x, LASA 0x%lx\n",
+    "%a: TPM2 %a @ 0x%lx, control area 0x%lx, start method 0x%x, LAML 0x%x, LASA 0x%lx\n",
     __func__,
+    TpmInterfaceName,
     TpmBase,
+    Tpm2Info.AddressOfControlArea,
+    Tpm2Info.StartMethod,
     Tpm2Info.Laml,
     Tpm2Info.Lasa
     ));
