@@ -1,0 +1,35 @@
+## @file
+#  Scorpi fail-open security architectural protocol producer.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ScorpiSecurityStubDxe
+  FILE_GUID                      = 12C799E0-BABB-46C0-97A3-9D922F941AA3
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ScorpiSecurityStubInitialize
+
+[Sources]
+  ScorpiSecurityStub.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  DebugLib
+  ReportStatusCodeLib
+  SecurityManagementLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiSecurityArchProtocolGuid                  ## PRODUCES
+  gEfiSecurity2ArchProtocolGuid                 ## PRODUCES
+
+[Depex]
+  TRUE

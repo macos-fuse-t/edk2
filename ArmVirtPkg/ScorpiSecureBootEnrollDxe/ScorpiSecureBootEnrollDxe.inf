@@ -21,16 +21,19 @@
   SecurityPkg/SecurityPkg.dec
 
 [LibraryClasses]
+  BaseMemoryLib
   DebugLib
+  MemoryAllocationLib
   SecureBootVariableLib
   SecureBootVariableProvisionLib
   UefiDriverEntryPoint
+  UefiLib
   UefiRuntimeServicesTableLib
 
 [Guids]
+  gEfiCertSha256Guid
   gEfiCustomModeEnableGuid
   gEfiGlobalVariableGuid
-  gEfiSecureBootEnableDisableGuid
 
 [Depex]
   gEfiVariableArchProtocolGuid AND

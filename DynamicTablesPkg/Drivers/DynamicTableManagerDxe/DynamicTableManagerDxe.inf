@@ -39,6 +39,7 @@
 [LibraryClasses]
   PrintLib
   TableHelperLib
+  TpmMeasurementLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
 

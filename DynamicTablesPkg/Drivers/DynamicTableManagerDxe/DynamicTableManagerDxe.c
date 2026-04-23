@@ -7,8 +7,10 @@
 
 **/
 
+#include <IndustryStandard/UefiTcgPlatform.h>
 #include <Library/DebugLib.h>
 #include <Library/PcdLib.h>
+#include <Library/TpmMeasurementLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/AcpiSystemDescriptionTable.h>
 #include <Protocol/AcpiTable.h>
@@ -32,6 +34,26 @@
 STATIC ACPI_TABLE_PRESENCE_INFO  *mAcpiVerifyTables;
 STATIC UINT32                    mAcpiVerifyTablesCount;
 STATIC INT32                     mAcpiVerifyTablesFadtIndex;
+
+STATIC
+VOID
+MeasureAcpiTable (
+  IN CONST EFI_ACPI_DESCRIPTION_HEADER  *AcpiTable
+  )
+{
+  if ((AcpiTable == NULL) || (AcpiTable->Length == 0)) {
+    return;
+  }
+
+  TpmMeasureAndLogData (
+    1,
+    EV_PLATFORM_CONFIG_FLAGS,
+    EV_POSTCODE_INFO_ACPI_DATA,
+    ACPI_DATA_LEN,
+    (VOID *)AcpiTable,
+    AcpiTable->Length
+    );
+}
 
 /** This macro expands to a function that retrieves the ACPI Table
     List from the Configuration Manager.
@@ -105,6 +127,8 @@ BuildAndInstallSingleAcpiTable (
 
   // Dump ACPI Table Header
   DUMP_ACPI_TABLE_HEADER (AcpiTable);
+
+  MeasureAcpiTable (AcpiTable);
 
   // Install ACPI table
   Status = AcpiTableProtocol->InstallAcpiTable (
@@ -225,6 +249,9 @@ BuildAndInstallMultipleAcpiTable (
   for (Index = 0; Index < TableCount; Index++) {
     // Dump ACPI Table Header
     DUMP_ACPI_TABLE_HEADER (AcpiTable[Index]);
+
+    MeasureAcpiTable (AcpiTable[Index]);
+
     // Install ACPI table
     Status = AcpiTableProtocol->InstallAcpiTable (
                                   AcpiTableProtocol,

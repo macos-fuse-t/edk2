@@ -116,12 +116,11 @@ READ_LOCK_STATUS   = TRUE
   #
   INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
   INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
-  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+  INF ArmVirtPkg/ScorpiSecurityStubDxe/ScorpiSecurityStubDxe.inf
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
 !if $(SECURE_BOOT_ENABLE) == TRUE
-  INF SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
   INF ArmVirtPkg/ScorpiSecureBootEnrollDxe/ScorpiSecureBootEnrollDxe.inf
 
   FILE FREEFORM = 85254ea7-4759-4fc4-82d4-5eed5fb0a4a0 {
@@ -289,6 +288,10 @@ READ_LOCK_STATUS   = TRUE
   INF ArmPkg/Drivers/CpuPei/CpuPei.inf
   INF MdeModulePkg/Universal/PCD/Pei/Pcd.inf
   INF MdeModulePkg/Universal/Variable/Pei/VariablePei.inf
+!if $(TPM2_ENABLE) == TRUE
+  INF OvmfPkg/Tcg/Tcg2Config/Tcg2ConfigPei.inf
+  INF SecurityPkg/Tcg/Tcg2Pei/Tcg2Pei.inf
+!endif
   INF MdeModulePkg/Core/DxeIplPeim/DxeIpl.inf
   INF OvmfPkg/PlatformHasAcpiDtDxe/PlatformHasAcpiDtDxe.inf
 
