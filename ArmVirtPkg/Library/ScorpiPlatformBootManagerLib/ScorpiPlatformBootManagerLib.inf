@@ -82,10 +82,13 @@
   gEfiFileSystemInfoGuid
   gEfiFileSystemVolumeLabelInfoIdGuid
   gEfiEndOfDxeEventGroupGuid
+  gEfiGlobalVariableGuid
+  gEfiSecureBootEnableDisableGuid
   gEfiTtyTermGuid
   gUefiShellFileGuid
 
 [Protocols]
+  gFdtClientProtocolGuid
   gEdkiiNonDiscoverableDeviceProtocolGuid
   gEfiBootManagerPolicyProtocolGuid
   gEfiDevicePathProtocolGuid

@@ -32,9 +32,12 @@
 #include <Protocol/PlatformBootManager.h>
 #include <Guid/BootDiscoveryPolicy.h>
 #include <Guid/EventGroup.h>
+#include <Guid/AuthenticatedVariableFormat.h>
+#include <Guid/GlobalVariable.h>
 #include <Guid/NonDiscoverableDevice.h>
 #include <Guid/TtyTerm.h>
 #include <Guid/SerialPortLibVendor.h>
+#include <Protocol/FdtClient.h>
 
 #include "PlatformBm.h"
 
@@ -123,6 +126,595 @@ STATIC PLATFORM_USB_KEYBOARD  mUsbKeyboard = {
     DP_NODE_LEN (EFI_DEVICE_PATH_PROTOCOL)
   }
 };
+
+STATIC
+BOOLEAN
+AsciiEqualsCi (
+  IN CONST CHAR8  *Lhs,
+  IN CONST CHAR8  *Rhs
+  )
+{
+  CHAR8  L;
+  CHAR8  R;
+
+  while ((*Lhs != '\0') && (*Rhs != '\0')) {
+    L = *Lhs++;
+    R = *Rhs++;
+    if ((L >= 'A') && (L <= 'Z')) {
+      L = (CHAR8)(L - 'A' + 'a');
+    }
+
+    if ((R >= 'A') && (R <= 'Z')) {
+      R = (CHAR8)(R - 'A' + 'a');
+    }
+
+    if (L != R) {
+      return FALSE;
+    }
+  }
+
+  return (*Lhs == '\0') && (*Rhs == '\0');
+}
+
+STATIC
+EFI_STATUS
+ScorpiGetChosenString (
+  IN  CONST CHAR8  *PropertyName,
+  OUT CONST CHAR8  **Value
+  )
+{
+  FDT_CLIENT_PROTOCOL  *FdtClient;
+  CONST VOID           *Prop;
+  UINT32               PropSize;
+  INT32                ChosenNode;
+  EFI_STATUS           Status;
+
+  *Value = NULL;
+
+  Status = gBS->LocateProtocol (
+                  &gFdtClientProtocolGuid,
+                  NULL,
+                  (VOID **)&FdtClient
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = FdtClient->GetOrInsertChosenNode (FdtClient, &ChosenNode);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = FdtClient->GetNodeProperty (
+                        FdtClient,
+                        ChosenNode,
+                        PropertyName,
+                        &Prop,
+                        &PropSize
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  if ((PropSize == 0) || (((CONST CHAR8 *)Prop)[PropSize - 1] != '\0')) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  *Value = (CONST CHAR8 *)Prop;
+  return EFI_SUCCESS;
+}
+
+STATIC
+BOOLEAN
+ScorpiParseUint16 (
+  IN  CONST CHAR8  *Value,
+  OUT UINT16       *Result
+  )
+{
+  UINTN  Parsed;
+
+  if ((Value == NULL) || (*Value == '\0')) {
+    return FALSE;
+  }
+
+  Parsed = 0;
+  while (*Value != '\0') {
+    if ((*Value < '0') || (*Value > '9')) {
+      return FALSE;
+    }
+
+    Parsed = Parsed * 10 + (UINTN)(*Value - '0');
+    if (Parsed > MAX_UINT16) {
+      return FALSE;
+    }
+
+    Value++;
+  }
+
+  *Result = (UINT16)Parsed;
+  return TRUE;
+}
+
+STATIC
+BOOLEAN
+ScorpiParseSecureBootValue (
+  IN  CONST CHAR8  *Value,
+  OUT UINT8        *Result
+  )
+{
+  if (AsciiEqualsCi (Value, "on") ||
+      AsciiEqualsCi (Value, "off"))
+  {
+    *Result = AsciiEqualsCi (Value, "on") ? SECURE_BOOT_ENABLE :
+                                            SECURE_BOOT_DISABLE;
+    return TRUE;
+  }
+
+  return FALSE;
+}
+
+STATIC
+VOID
+ScorpiApplyTimeoutParam (
+  VOID
+  )
+{
+  CONST CHAR8  *Value;
+  EFI_STATUS   Status;
+  UINT16       Timeout;
+
+  Status = ScorpiGetChosenString ("scorpi,timeout", &Value);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
+  if (!ScorpiParseUint16 (Value, &Timeout)) {
+    DEBUG ((DEBUG_WARN, "%a: invalid scorpi,timeout='%a'\n", __func__, Value));
+    return;
+  }
+
+  Status = PcdSet16S (PcdPlatformBootTimeOut, Timeout);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: PcdSet16S failed: %r\n", __func__, Status));
+  }
+
+  Status = gRT->SetVariable (
+                  EFI_TIME_OUT_VARIABLE_NAME,
+                  &gEfiGlobalVariableGuid,
+                  EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS |
+                  EFI_VARIABLE_RUNTIME_ACCESS,
+                  sizeof (Timeout),
+                  &Timeout
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: Timeout variable update failed: %r\n", __func__, Status));
+  }
+}
+
+STATIC
+VOID
+ScorpiApplySecureBootParam (
+  VOID
+  )
+{
+  CONST CHAR8  *Value;
+  EFI_STATUS   Status;
+  UINT8        SecureBootEnable;
+
+  Status = ScorpiGetChosenString ("scorpi,secure-boot", &Value);
+  if (EFI_ERROR (Status)) {
+    Value = "off";
+  }
+
+  if (!ScorpiParseSecureBootValue (Value, &SecureBootEnable)) {
+    DEBUG ((DEBUG_WARN, "%a: invalid scorpi,secure-boot='%a'\n", __func__, Value));
+    return;
+  }
+
+  Status = gRT->SetVariable (
+                  EFI_SECURE_BOOT_ENABLE_NAME,
+                  &gEfiSecureBootEnableDisableGuid,
+                  EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS,
+                  sizeof (SecureBootEnable),
+                  &SecureBootEnable
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: SecureBootEnable update failed: %r\n", __func__, Status));
+  }
+}
+
+#define SCORPI_BOOT_ID_MAX  64
+
+typedef struct {
+  CHAR8      Id[SCORPI_BOOT_ID_MAX];
+  UINT8      Bus;
+  UINT8      Slot;
+  UINT8      Func;
+  UINT16     Port;
+  BOOLEAN    HasPort;
+} SCORPI_BOOT_DEVICE;
+
+STATIC
+BOOLEAN
+ScorpiAsciiTokenEquals (
+  IN CONST CHAR8  *Token,
+  IN UINTN        TokenLen,
+  IN CONST CHAR8  *Value
+  )
+{
+  UINTN  Index;
+
+  for (Index = 0; Index < TokenLen; Index++) {
+    if (Value[Index] == '\0' || Token[Index] != Value[Index]) {
+      return FALSE;
+    }
+  }
+
+  return Value[TokenLen] == '\0';
+}
+
+STATIC
+BOOLEAN
+ScorpiParseDecimalToken (
+  IN  CONST CHAR8  *Token,
+  IN  UINTN        TokenLen,
+  OUT UINTN        *Result
+  )
+{
+  UINTN  Index;
+  UINTN  Parsed;
+
+  if (TokenLen == 0) {
+    return FALSE;
+  }
+
+  Parsed = 0;
+  for (Index = 0; Index < TokenLen; Index++) {
+    if ((Token[Index] < '0') || (Token[Index] > '9')) {
+      return FALSE;
+    }
+
+    Parsed = Parsed * 10 + (UINTN)(Token[Index] - '0');
+  }
+
+  *Result = Parsed;
+  return TRUE;
+}
+
+STATIC
+BOOLEAN
+ScorpiCopyToken (
+  OUT CHAR8        *Dest,
+  IN  UINTN        DestSize,
+  IN  CONST CHAR8  *Token,
+  IN  UINTN        TokenLen
+  )
+{
+  if ((DestSize == 0) || (TokenLen >= DestSize)) {
+    return FALSE;
+  }
+
+  CopyMem (Dest, Token, TokenLen);
+  Dest[TokenLen] = '\0';
+  return TRUE;
+}
+
+STATIC
+BOOLEAN
+ScorpiParseBootMapField (
+  IN OUT SCORPI_BOOT_DEVICE  *Device,
+  IN     CONST CHAR8         *Key,
+  IN     UINTN               KeyLen,
+  IN     CONST CHAR8         *Value,
+  IN     UINTN               ValueLen
+  )
+{
+  UINTN  Parsed;
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "id")) {
+    return ScorpiCopyToken (Device->Id, sizeof (Device->Id), Value, ValueLen);
+  }
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "type")) {
+    return TRUE;
+  }
+
+  if (!ScorpiParseDecimalToken (Value, ValueLen, &Parsed)) {
+    return FALSE;
+  }
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "bus")) {
+    if (Parsed > MAX_UINT8) {
+      return FALSE;
+    }
+
+    Device->Bus = (UINT8)Parsed;
+    return TRUE;
+  }
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "slot")) {
+    if (Parsed > MAX_UINT8) {
+      return FALSE;
+    }
+
+    Device->Slot = (UINT8)Parsed;
+    return TRUE;
+  }
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "func")) {
+    if (Parsed > MAX_UINT8) {
+      return FALSE;
+    }
+
+    Device->Func = (UINT8)Parsed;
+    return TRUE;
+  }
+
+  if (ScorpiAsciiTokenEquals (Key, KeyLen, "port")) {
+    if (Parsed <= MAX_UINT16) {
+      Device->Port    = (UINT16)Parsed;
+      Device->HasPort = TRUE;
+    }
+
+    return TRUE;
+  }
+
+  return TRUE;
+}
+
+STATIC
+BOOLEAN
+ScorpiParseBootMapLine (
+  IN  CONST CHAR8          *Line,
+  IN  UINTN                LineLen,
+  OUT SCORPI_BOOT_DEVICE   *Device
+  )
+{
+  CONST CHAR8  *Field;
+  CONST CHAR8  *FieldEnd;
+  CONST CHAR8  *LineEnd;
+  CONST CHAR8  *Equals;
+
+  ZeroMem (Device, sizeof (*Device));
+  Device->Port    = MAX_UINT16;
+  Device->HasPort = FALSE;
+
+  Field   = Line;
+  LineEnd = Line + LineLen;
+  while (Field < LineEnd) {
+    FieldEnd = Field;
+    while ((FieldEnd < LineEnd) && (*FieldEnd != ',')) {
+      FieldEnd++;
+    }
+
+    Equals = Field;
+    while ((Equals < FieldEnd) && (*Equals != '=')) {
+      Equals++;
+    }
+
+    if ((Equals == Field) || (Equals == FieldEnd)) {
+      return FALSE;
+    }
+
+    if (!ScorpiParseBootMapField (
+           Device,
+           Field,
+           (UINTN)(Equals - Field),
+           Equals + 1,
+           (UINTN)(FieldEnd - Equals - 1)
+           ))
+    {
+      return FALSE;
+    }
+
+    Field = FieldEnd + 1;
+  }
+
+  return Device->Id[0] != '\0';
+}
+
+STATIC
+BOOLEAN
+ScorpiFindBootDevice (
+  IN  CONST CHAR8          *Id,
+  OUT SCORPI_BOOT_DEVICE   *Device
+  )
+{
+  CONST CHAR8  *Map;
+  CONST CHAR8  *Line;
+  CONST CHAR8  *LineEnd;
+  EFI_STATUS   Status;
+
+  if (Id[0] == '@') {
+    Id++;
+  }
+
+  Status = ScorpiGetChosenString ("scorpi,boot-map", &Map);
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  Line = Map;
+  while (*Line != '\0') {
+    LineEnd = Line;
+    while ((*LineEnd != '\0') && (*LineEnd != '\n')) {
+      LineEnd++;
+    }
+
+    if (ScorpiParseBootMapLine (Line, (UINTN)(LineEnd - Line), Device) &&
+        AsciiEqualsCi (Device->Id, Id))
+    {
+      return TRUE;
+    }
+
+    Line = (*LineEnd == '\n') ? LineEnd + 1 : LineEnd;
+  }
+
+  return FALSE;
+}
+
+STATIC
+BOOLEAN
+ScorpiBootOptionMatchesDevice (
+  IN CONST EFI_BOOT_MANAGER_LOAD_OPTION  *BootOption,
+  IN CONST SCORPI_BOOT_DEVICE            *Device
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL  *Node;
+  PCI_DEVICE_PATH           *Pci;
+  SATA_DEVICE_PATH          *Sata;
+  BOOLEAN                   PciMatched;
+  BOOLEAN                   PortMatched;
+
+  PciMatched  = FALSE;
+  PortMatched = !Device->HasPort;
+
+  for (Node = BootOption->FilePath; !IsDevicePathEnd (Node);
+       Node = NextDevicePathNode (Node))
+  {
+    if ((DevicePathType (Node) == HARDWARE_DEVICE_PATH) &&
+        (DevicePathSubType (Node) == HW_PCI_DP))
+    {
+      Pci = (PCI_DEVICE_PATH *)Node;
+      if ((Pci->Device == Device->Slot) && (Pci->Function == Device->Func)) {
+        PciMatched = TRUE;
+      }
+    }
+
+    if ((DevicePathType (Node) == MESSAGING_DEVICE_PATH) &&
+        (DevicePathSubType (Node) == MSG_SATA_DP))
+    {
+      Sata = (SATA_DEVICE_PATH *)Node;
+      if (Device->HasPort && (Sata->HBAPortNumber == Device->Port)) {
+        PortMatched = TRUE;
+      }
+    }
+  }
+
+  return PciMatched && PortMatched;
+}
+
+STATIC
+BOOLEAN
+ScorpiResolveBootSpec (
+  IN  CONST CHAR8                    *Spec,
+  IN  EFI_BOOT_MANAGER_LOAD_OPTION   *BootOptions,
+  IN  UINTN                          BootOptionCount,
+  OUT UINT16                         *OptionNumber
+  )
+{
+  SCORPI_BOOT_DEVICE  Device;
+  UINTN               Index;
+
+  if (!ScorpiFindBootDevice (Spec, &Device)) {
+    return FALSE;
+  }
+
+  for (Index = 0; Index < BootOptionCount; Index++) {
+    if (ScorpiBootOptionMatchesDevice (&BootOptions[Index], &Device)) {
+      *OptionNumber = (UINT16)BootOptions[Index].OptionNumber;
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+BOOLEAN
+ScorpiBootOrderContains (
+  IN CONST UINT16  *BootOrder,
+  IN UINTN         BootOrderCount,
+  IN UINT16        OptionNumber
+  )
+{
+  UINTN  Index;
+
+  for (Index = 0; Index < BootOrderCount; Index++) {
+    if (BootOrder[Index] == OptionNumber) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+VOID
+ScorpiApplyBootOrderParam (
+  VOID
+  )
+{
+  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions;
+  CONST CHAR8                   *Cursor;
+  CONST CHAR8                   *SpecEnd;
+  CONST CHAR8                   *Value;
+  EFI_STATUS                    Status;
+  UINT16                        *BootOrder;
+  UINT16                        OptionNumber;
+  UINTN                         BootOptionCount;
+  UINTN                         BootOrderCount;
+  UINTN                         Index;
+  CHAR8                         Spec[SCORPI_BOOT_ID_MAX];
+
+  Status = ScorpiGetChosenString ("scorpi,boot-order", &Value);
+  if (EFI_ERROR (Status)) {
+    return;
+  }
+
+  BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
+  BootOrder   = AllocateZeroPool (BootOptionCount * sizeof (*BootOrder));
+  if (BootOrder == NULL) {
+    EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+    return;
+  }
+
+  BootOrderCount = 0;
+  Cursor         = Value;
+  while (*Cursor != '\0') {
+    SpecEnd = Cursor;
+    while ((*SpecEnd != '\0') && (*SpecEnd != ':')) {
+      SpecEnd++;
+    }
+
+    if (!ScorpiCopyToken (Spec, sizeof (Spec), Cursor, (UINTN)(SpecEnd - Cursor)) ||
+        !ScorpiResolveBootSpec (Spec, BootOptions, BootOptionCount, &OptionNumber))
+    {
+      DEBUG ((DEBUG_WARN, "%a: no boot option matched boot order entry '%a'\n", __func__, Spec));
+      FreePool (BootOrder);
+      EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+      return;
+    }
+
+    if (!ScorpiBootOrderContains (BootOrder, BootOrderCount, OptionNumber)) {
+      BootOrder[BootOrderCount++] = OptionNumber;
+    }
+
+    Cursor = (*SpecEnd == ':') ? SpecEnd + 1 : SpecEnd;
+  }
+
+  for (Index = 0; Index < BootOptionCount; Index++) {
+    OptionNumber = (UINT16)BootOptions[Index].OptionNumber;
+    if (!ScorpiBootOrderContains (BootOrder, BootOrderCount, OptionNumber)) {
+      BootOrder[BootOrderCount++] = OptionNumber;
+    }
+  }
+
+  Status = gRT->SetVariable (
+                  EFI_BOOT_ORDER_VARIABLE_NAME,
+                  &gEfiGlobalVariableGuid,
+                  EFI_VARIABLE_NON_VOLATILE | EFI_VARIABLE_BOOTSERVICE_ACCESS |
+                  EFI_VARIABLE_RUNTIME_ACCESS,
+                  BootOrderCount * sizeof (*BootOrder),
+                  BootOrder
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: BootOrder update failed: %r\n", __func__, Status));
+  }
+
+  FreePool (BootOrder);
+  EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+}
 
 /**
   Check if the handle satisfies a particular condition.
@@ -716,6 +1308,9 @@ PlatformBootManagerBeforeConsole (
   VOID
   )
 {
+  ScorpiApplyTimeoutParam ();
+  ScorpiApplySecureBootParam ();
+
   //
   // Signal EndOfDxe PI Event
   //
@@ -1070,6 +1665,8 @@ PlatformBootManagerAfterConsole (
   Key.ScanCode    = SCAN_NULL;
   Key.UnicodeChar = L's';
   PlatformRegisterFvBootOption (&gUefiShellFileGuid, L"UEFI Shell", 0, &Key);
+
+  ScorpiApplyBootOrderParam ();
 }
 
 /**
