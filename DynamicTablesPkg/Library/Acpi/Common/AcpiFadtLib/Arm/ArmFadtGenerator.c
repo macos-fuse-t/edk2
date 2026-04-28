@@ -40,8 +40,7 @@ GET_OBJECT_LIST (
 
 /** This macro defines the FADT flag options for ARM Platforms.
 */
-#define FADT_FLAGS  (EFI_ACPI_6_5_HW_REDUCED_ACPI |          \
-                     EFI_ACPI_6_5_LOW_POWER_S0_IDLE_CAPABLE)
+#define FADT_FLAGS  EFI_ACPI_6_5_HW_REDUCED_ACPI
 
 /** Updates the Architecture specific information in the FADT Table.
 
