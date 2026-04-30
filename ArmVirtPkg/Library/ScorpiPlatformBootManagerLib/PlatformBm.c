@@ -17,6 +17,7 @@
 #include <Library/DevicePathLib.h>
 #include <Library/HobLib.h>
 #include <Library/PcdLib.h>
+#include <Library/QemuFwCfgLib.h>
 #include <Library/Tcg2PhysicalPresenceLib.h>
 #include <Library/UefiBootManagerLib.h>
 #include <Library/UefiLib.h>
@@ -30,6 +31,7 @@
 #include <Protocol/PciIo.h>
 #include <Protocol/PciRootBridgeIo.h>
 #include <Protocol/PlatformBootManager.h>
+#include <Protocol/SimpleFileSystem.h>
 #include <Guid/BootDiscoveryPolicy.h>
 #include <Guid/EventGroup.h>
 #include <Guid/AuthenticatedVariableFormat.h>
@@ -205,6 +207,73 @@ ScorpiGetChosenString (
 }
 
 STATIC
+EFI_STATUS
+ScorpiGetFwCfgString (
+  IN  CONST CHAR8  *FileName,
+  OUT CHAR8        **Value
+  )
+{
+  FIRMWARE_CONFIG_ITEM  FwCfgItem;
+  RETURN_STATUS         ReturnStatus;
+  UINTN                 FwCfgSize;
+  CHAR8                 *Buffer;
+
+  *Value = NULL;
+
+  if (!QemuFwCfgIsAvailable ()) {
+    return EFI_NOT_FOUND;
+  }
+
+  ReturnStatus = QemuFwCfgFindFile (FileName, &FwCfgItem, &FwCfgSize);
+  if (RETURN_ERROR (ReturnStatus) || (FwCfgSize == 0)) {
+    return EFI_NOT_FOUND;
+  }
+
+  Buffer = AllocateZeroPool (FwCfgSize + 1);
+  if (Buffer == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  QemuFwCfgSelectItem (FwCfgItem);
+  QemuFwCfgReadBytes (FwCfgSize, Buffer);
+  Buffer[FwCfgSize] = '\0';
+
+  *Value = Buffer;
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+ScorpiGetFirmwareString (
+  IN  CONST CHAR8  *FwCfgName,
+  IN  CONST CHAR8  *FdtName,
+  OUT CHAR8        **Value
+  )
+{
+  CONST CHAR8  *ChosenValue;
+  EFI_STATUS   Status;
+  UINTN        Size;
+
+  Status = ScorpiGetFwCfgString (FwCfgName, Value);
+  if (!EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = ScorpiGetChosenString (FdtName, &ChosenValue);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Size   = AsciiStrSize (ChosenValue);
+  *Value = AllocateCopyPool (Size, ChosenValue);
+  if (*Value == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
 BOOLEAN
 ScorpiParseUint16 (
   IN  CONST CHAR8  *Value,
@@ -259,17 +328,22 @@ ScorpiApplyTimeoutParam (
   VOID
   )
 {
-  CONST CHAR8  *Value;
+  CHAR8       *Value;
   EFI_STATUS   Status;
   UINT16       Timeout;
 
-  Status = ScorpiGetChosenString ("scorpi,timeout", &Value);
+  Status = ScorpiGetFirmwareString (
+             "opt/scorpi/boot-timeout",
+             "scorpi,timeout",
+             &Value
+             );
   if (EFI_ERROR (Status)) {
     return;
   }
 
   if (!ScorpiParseUint16 (Value, &Timeout)) {
     DEBUG ((DEBUG_WARN, "%a: invalid scorpi,timeout='%a'\n", __func__, Value));
+    FreePool (Value);
     return;
   }
 
@@ -289,6 +363,8 @@ ScorpiApplyTimeoutParam (
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_WARN, "%a: Timeout variable update failed: %r\n", __func__, Status));
   }
+
+  FreePool (Value);
 }
 
 STATIC
@@ -297,17 +373,25 @@ ScorpiApplySecureBootParam (
   VOID
   )
 {
-  CONST CHAR8  *Value;
+  CHAR8       *Value;
   EFI_STATUS   Status;
   UINT8        SecureBootEnable;
 
-  Status = ScorpiGetChosenString ("scorpi,secure-boot", &Value);
+  Status = ScorpiGetFirmwareString (
+             "opt/scorpi/secure-boot",
+             "scorpi,secure-boot",
+             &Value
+             );
   if (EFI_ERROR (Status)) {
-    Value = "off";
+    Value = AllocateCopyPool (sizeof ("off"), "off");
+    if (Value == NULL) {
+      return;
+    }
   }
 
   if (!ScorpiParseSecureBootValue (Value, &SecureBootEnable)) {
     DEBUG ((DEBUG_WARN, "%a: invalid scorpi,secure-boot='%a'\n", __func__, Value));
+    FreePool (Value);
     return;
   }
 
@@ -321,12 +405,18 @@ ScorpiApplySecureBootParam (
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_WARN, "%a: SecureBootEnable update failed: %r\n", __func__, Status));
   }
+
+  FreePool (Value);
 }
 
 #define SCORPI_BOOT_ID_MAX  64
+#define SCORPI_BOOT_TYPE_MAX  32
+
+STATIC CHAR16  mScorpiBootFileDesc[] = L"Scorpi boot file";
 
 typedef struct {
   CHAR8      Id[SCORPI_BOOT_ID_MAX];
+  CHAR8      Type[SCORPI_BOOT_TYPE_MAX];
   UINT8      Bus;
   UINT8      Slot;
   UINT8      Func;
@@ -416,7 +506,7 @@ ScorpiParseBootMapField (
   }
 
   if (ScorpiAsciiTokenEquals (Key, KeyLen, "type")) {
-    return TRUE;
+    return ScorpiCopyToken (Device->Type, sizeof (Device->Type), Value, ValueLen);
   }
 
   if (!ScorpiParseDecimalToken (Value, ValueLen, &Parsed)) {
@@ -520,16 +610,20 @@ ScorpiFindBootDevice (
   OUT SCORPI_BOOT_DEVICE   *Device
   )
 {
-  CONST CHAR8  *Map;
-  CONST CHAR8  *Line;
-  CONST CHAR8  *LineEnd;
-  EFI_STATUS   Status;
+  CHAR8       *Map;
+  CONST CHAR8 *Line;
+  CONST CHAR8 *LineEnd;
+  EFI_STATUS  Status;
 
   if (Id[0] == '@') {
     Id++;
   }
 
-  Status = ScorpiGetChosenString ("scorpi,boot-map", &Map);
+  Status = ScorpiGetFirmwareString (
+             "opt/scorpi/boot-map",
+             "scorpi,boot-map",
+             &Map
+             );
   if (EFI_ERROR (Status)) {
     return FALSE;
   }
@@ -544,12 +638,14 @@ ScorpiFindBootDevice (
     if (ScorpiParseBootMapLine (Line, (UINTN)(LineEnd - Line), Device) &&
         AsciiEqualsCi (Device->Id, Id))
     {
+      FreePool (Map);
       return TRUE;
     }
 
     Line = (*LineEnd == '\n') ? LineEnd + 1 : LineEnd;
   }
 
+  FreePool (Map);
   return FALSE;
 }
 
@@ -596,8 +692,197 @@ ScorpiBootOptionMatchesDevice (
 
 STATIC
 BOOLEAN
+ScorpiFileExistsOnFsHandle (
+  IN EFI_HANDLE    Handle,
+  IN CONST CHAR16  *Path
+  )
+{
+  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL  *SimpleFs;
+  EFI_FILE_PROTOCOL                *Root;
+  EFI_FILE_PROTOCOL                *File;
+  EFI_STATUS                       Status;
+
+  Status = gBS->HandleProtocol (
+                  Handle,
+                  &gEfiSimpleFileSystemProtocolGuid,
+                  (VOID **)&SimpleFs
+                  );
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  Status = SimpleFs->OpenVolume (SimpleFs, &Root);
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  Status = Root->Open (
+                   Root,
+                   &File,
+                   (CHAR16 *)Path,
+                   EFI_FILE_MODE_READ,
+                   0
+                   );
+  Root->Close (Root);
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  File->Close (File);
+  return TRUE;
+}
+
+STATIC
+EFI_STATUS
+ScorpiInitializeBootFileOption (
+  IN  EFI_HANDLE                    Handle,
+  IN  CONST CHAR16                  *Path,
+  OUT EFI_BOOT_MANAGER_LOAD_OPTION  *NewOption
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
+  EFI_STATUS                    Status;
+
+  DevicePath = FileDevicePath (Handle, (CHAR16 *)Path);
+  if (DevicePath == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Status = EfiBootManagerInitializeLoadOption (
+             NewOption,
+             LoadOptionNumberUnassigned,
+             LoadOptionTypeBoot,
+             LOAD_OPTION_ACTIVE,
+             mScorpiBootFileDesc,
+             DevicePath,
+             NULL,
+             0
+             );
+  FreePool (DevicePath);
+
+  return Status;
+}
+
+STATIC
+CHAR16 *
+ScorpiAsciiPathToChar16 (
+  IN CONST CHAR8  *Path
+  )
+{
+  CHAR16  *Result;
+  UINTN   Index;
+  UINTN   Size;
+
+  Size   = AsciiStrLen (Path) + 1;
+  Result = AllocateZeroPool (Size * sizeof (*Result));
+  if (Result == NULL) {
+    return NULL;
+  }
+
+  for (Index = 0; Index < Size; Index++) {
+    if (Path[Index] == '/') {
+      Result[Index] = L'\\';
+    } else {
+      Result[Index] = (CHAR16)Path[Index];
+    }
+  }
+
+  return Result;
+}
+
+STATIC
+BOOLEAN
+ScorpiResolveBootFileSpec (
+  IN  CONST SCORPI_BOOT_DEVICE  *Device,
+  IN  CONST CHAR8               *BootFile,
+  OUT UINT16                    *OptionNumber
+  )
+{
+  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions;
+  EFI_BOOT_MANAGER_LOAD_OPTION  NewOption;
+  EFI_HANDLE                    *Handles;
+  EFI_STATUS                    Status;
+  CHAR16                        *BootFilePath;
+  INTN                          OptionIndex;
+  UINTN                         BootOptionCount;
+  UINTN                         HandleCount;
+  UINTN                         Index;
+
+  BootFilePath = ScorpiAsciiPathToChar16 (BootFile);
+  if (BootFilePath == NULL) {
+    return FALSE;
+  }
+
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiSimpleFileSystemProtocolGuid,
+                  NULL,
+                  &HandleCount,
+                  &Handles
+                  );
+  if (EFI_ERROR (Status)) {
+    FreePool (BootFilePath);
+    return FALSE;
+  }
+
+  for (Index = 0; Index < HandleCount; Index++) {
+    if (!ScorpiFileExistsOnFsHandle (Handles[Index], BootFilePath)) {
+      continue;
+    }
+
+    Status = ScorpiInitializeBootFileOption (
+               Handles[Index],
+               BootFilePath,
+               &NewOption
+               );
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    if (!ScorpiBootOptionMatchesDevice (&NewOption, Device)) {
+      EfiBootManagerFreeLoadOption (&NewOption);
+      continue;
+    }
+
+    BootOptions = EfiBootManagerGetLoadOptions (
+                    &BootOptionCount,
+                    LoadOptionTypeBoot
+                    );
+    OptionIndex = EfiBootManagerFindLoadOption (
+                    &NewOption,
+                    BootOptions,
+                    BootOptionCount
+                    );
+    if (OptionIndex >= 0) {
+      *OptionNumber = (UINT16)BootOptions[OptionIndex].OptionNumber;
+    } else {
+      Status = EfiBootManagerAddLoadOptionVariable (&NewOption, MAX_UINTN);
+      if (EFI_ERROR (Status)) {
+        EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+        EfiBootManagerFreeLoadOption (&NewOption);
+        continue;
+      }
+
+      *OptionNumber = (UINT16)NewOption.OptionNumber;
+    }
+
+    EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+    EfiBootManagerFreeLoadOption (&NewOption);
+    FreePool (Handles);
+    FreePool (BootFilePath);
+    return TRUE;
+  }
+
+  FreePool (Handles);
+  FreePool (BootFilePath);
+  return FALSE;
+}
+
+STATIC
+BOOLEAN
 ScorpiResolveBootSpec (
   IN  CONST CHAR8                    *Spec,
+  IN  CONST CHAR8                    *BootFile OPTIONAL,
   IN  EFI_BOOT_MANAGER_LOAD_OPTION   *BootOptions,
   IN  UINTN                          BootOptionCount,
   OUT UINT16                         *OptionNumber
@@ -608,6 +893,10 @@ ScorpiResolveBootSpec (
 
   if (!ScorpiFindBootDevice (Spec, &Device)) {
     return FALSE;
+  }
+
+  if ((BootFile != NULL) && (BootFile[0] != '\0')) {
+    return ScorpiResolveBootFileSpec (&Device, BootFile, OptionNumber);
   }
 
   for (Index = 0; Index < BootOptionCount; Index++) {
@@ -648,7 +937,8 @@ ScorpiApplyBootOrderParam (
   EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions;
   CONST CHAR8                   *Cursor;
   CONST CHAR8                   *SpecEnd;
-  CONST CHAR8                   *Value;
+  CHAR8                         *BootFile;
+  CHAR8                         *Value;
   EFI_STATUS                    Status;
   UINT16                        *BootOrder;
   UINT16                        OptionNumber;
@@ -657,16 +947,30 @@ ScorpiApplyBootOrderParam (
   UINTN                         Index;
   CHAR8                         Spec[SCORPI_BOOT_ID_MAX];
 
-  Status = ScorpiGetChosenString ("scorpi,boot-order", &Value);
+  Status = ScorpiGetFirmwareString (
+             "opt/scorpi/boot-order",
+             "scorpi,boot-order",
+             &Value
+             );
   if (EFI_ERROR (Status)) {
     return;
   }
 
   BootOptions = EfiBootManagerGetLoadOptions (&BootOptionCount, LoadOptionTypeBoot);
-  BootOrder   = AllocateZeroPool (BootOptionCount * sizeof (*BootOrder));
+  BootOrder   = AllocateZeroPool ((BootOptionCount + 1) * sizeof (*BootOrder));
   if (BootOrder == NULL) {
+    FreePool (Value);
     EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
     return;
+  }
+
+  Status = ScorpiGetFirmwareString (
+             "opt/scorpi/boot-file",
+             "scorpi,boot-file",
+             &BootFile
+             );
+  if (EFI_ERROR (Status)) {
+    BootFile = NULL;
   }
 
   BootOrderCount = 0;
@@ -678,15 +982,10 @@ ScorpiApplyBootOrderParam (
     }
 
     if (!ScorpiCopyToken (Spec, sizeof (Spec), Cursor, (UINTN)(SpecEnd - Cursor)) ||
-        !ScorpiResolveBootSpec (Spec, BootOptions, BootOptionCount, &OptionNumber))
+        !ScorpiResolveBootSpec (Spec, BootFile, BootOptions, BootOptionCount, &OptionNumber))
     {
       DEBUG ((DEBUG_WARN, "%a: no boot option matched boot order entry '%a'\n", __func__, Spec));
-      FreePool (BootOrder);
-      EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
-      return;
-    }
-
-    if (!ScorpiBootOrderContains (BootOrder, BootOrderCount, OptionNumber)) {
+    } else if (!ScorpiBootOrderContains (BootOrder, BootOrderCount, OptionNumber)) {
       BootOrder[BootOrderCount++] = OptionNumber;
     }
 
@@ -698,6 +997,16 @@ ScorpiApplyBootOrderParam (
     if (!ScorpiBootOrderContains (BootOrder, BootOrderCount, OptionNumber)) {
       BootOrder[BootOrderCount++] = OptionNumber;
     }
+  }
+
+  if (BootOrderCount == 0) {
+    if (BootFile != NULL) {
+      FreePool (BootFile);
+    }
+    FreePool (Value);
+    FreePool (BootOrder);
+    EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+    return;
   }
 
   Status = gRT->SetVariable (
@@ -712,6 +1021,10 @@ ScorpiApplyBootOrderParam (
     DEBUG ((DEBUG_WARN, "%a: BootOrder update failed: %r\n", __func__, Status));
   }
 
+  if (BootFile != NULL) {
+    FreePool (BootFile);
+  }
+  FreePool (Value);
   FreePool (BootOrder);
   EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
 }

@@ -33,6 +33,7 @@
   EmbeddedPkg/EmbeddedPkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
+  OvmfPkg/OvmfPkg.dec
   SecurityPkg/SecurityPkg.dec
   ShellPkg/ShellPkg.dec
 
@@ -48,6 +49,7 @@
   MemoryAllocationLib
   PcdLib
   PrintLib
+  QemuFwCfgLib
   Tcg2PhysicalPresenceLib
   UefiBootManagerLib
   UefiBootServicesTableLib
