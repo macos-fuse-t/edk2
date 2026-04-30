@@ -43,6 +43,12 @@
 
 #include "PlatformBm.h"
 
+RETURN_STATUS
+EFIAPI
+QemuFwCfgInitialize (
+  VOID
+  );
+
 #define DP_NODE_LEN(Type)  { (UINT8)sizeof (Type), (UINT8)(sizeof (Type) >> 8) }
 
 #pragma pack (1)
@@ -221,7 +227,10 @@ ScorpiGetFwCfgString (
   *Value = NULL;
 
   if (!QemuFwCfgIsAvailable ()) {
-    return EFI_NOT_FOUND;
+    QemuFwCfgInitialize ();
+    if (!QemuFwCfgIsAvailable ()) {
+      return EFI_NOT_FOUND;
+    }
   }
 
   ReturnStatus = QemuFwCfgFindFile (FileName, &FwCfgItem, &FwCfgSize);
