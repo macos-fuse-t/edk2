@@ -361,15 +361,16 @@
       BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
   }
 !if $(SECURE_BOOT_ENABLE) == TRUE
-  ArmVirtPkg/ScorpiSecurityStubDxe/ScorpiSecurityStubDxe.inf {
+  MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf {
     <LibraryClasses>
+      NULL|SecurityPkg/Library/DxeImageVerificationLib/DxeImageVerificationLib.inf
 !if $(TPM2_ENABLE) == TRUE
       NULL|SecurityPkg/Library/DxeTpm2MeasureBootLib/DxeTpm2MeasureBootLib.inf
 !endif
   }
   ArmVirtPkg/ScorpiSecureBootEnrollDxe/ScorpiSecureBootEnrollDxe.inf
 !else
-  ArmVirtPkg/ScorpiSecurityStubDxe/ScorpiSecurityStubDxe.inf
+  MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
 !endif
   MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf {

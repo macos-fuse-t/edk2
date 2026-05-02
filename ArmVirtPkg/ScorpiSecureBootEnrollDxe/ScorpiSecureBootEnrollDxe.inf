@@ -18,12 +18,14 @@
 [Packages]
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
   SecurityPkg/SecurityPkg.dec
 
 [LibraryClasses]
   BaseMemoryLib
   DebugLib
   MemoryAllocationLib
+  QemuFwCfgLib
   SecureBootVariableLib
   SecureBootVariableProvisionLib
   UefiDriverEntryPoint

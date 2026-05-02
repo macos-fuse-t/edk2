@@ -116,7 +116,7 @@ READ_LOCK_STATUS   = TRUE
   #
   INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
   INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
-  INF ArmVirtPkg/ScorpiSecurityStubDxe/ScorpiSecurityStubDxe.inf
+  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
   INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   INF MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
   INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
@@ -137,6 +137,7 @@ READ_LOCK_STATUS   = TRUE
   FILE FREEFORM = c491d352-7623-4843-accc-2791a7574421 {
     SECTION RAW = ArmVirtPkg/ScorpiSecureBootKeys/MicrosoftPca.cer
     SECTION RAW = ArmVirtPkg/ScorpiSecureBootKeys/MicrosoftUefiCa.cer
+    SECTION RAW = ArmVirtPkg/ScorpiSecureBootKeys/MicrosoftUefiCa2023.cer
     SECTION UI = "DB Default"
   }
 !endif

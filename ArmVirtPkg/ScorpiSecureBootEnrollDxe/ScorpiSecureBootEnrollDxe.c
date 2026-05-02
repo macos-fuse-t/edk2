@@ -10,6 +10,7 @@
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/QemuFwCfgLib.h>
 #include <Library/UefiLib.h>
 #include <UefiSecureBoot.h>
 #include <Library/SecureBootVariableLib.h>
@@ -32,6 +33,97 @@ STATIC EFI_GUID  mShimSbatVendorGuid = {
 
 STATIC CONST CHAR16  mSbatLevelName[]   = L"SbatLevel";
 STATIC CONST CHAR16  mSbatLevelRtName[] = L"SbatLevelRT";
+
+STATIC
+BOOLEAN
+AsciiEqualsCi (
+  IN CONST CHAR8  *Lhs,
+  IN CONST CHAR8  *Rhs
+  )
+{
+  CHAR8  L;
+  CHAR8  R;
+
+  while ((*Lhs != '\0') && (*Rhs != '\0')) {
+    L = *Lhs++;
+    R = *Rhs++;
+    if ((L >= 'A') && (L <= 'Z')) {
+      L = (CHAR8)(L - 'A' + 'a');
+    }
+
+    if ((R >= 'A') && (R <= 'Z')) {
+      R = (CHAR8)(R - 'A' + 'a');
+    }
+
+    if (L != R) {
+      return FALSE;
+    }
+  }
+
+  return (*Lhs == '\0') && (*Rhs == '\0');
+}
+
+STATIC
+EFI_STATUS
+ScorpiGetFwCfgString (
+  IN  CONST CHAR8  *FileName,
+  OUT CHAR8        **Value
+  )
+{
+  FIRMWARE_CONFIG_ITEM  FwCfgItem;
+  RETURN_STATUS         ReturnStatus;
+  UINTN                 FwCfgSize;
+  CHAR8                 *Buffer;
+
+  *Value = NULL;
+
+  if (!QemuFwCfgIsAvailable ()) {
+    return EFI_NOT_FOUND;
+  }
+
+  ReturnStatus = QemuFwCfgFindFile (FileName, &FwCfgItem, &FwCfgSize);
+  if (RETURN_ERROR (ReturnStatus) || (FwCfgSize == 0)) {
+    return EFI_NOT_FOUND;
+  }
+
+  Buffer = AllocateZeroPool (FwCfgSize + 1);
+  if (Buffer == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  QemuFwCfgSelectItem (FwCfgItem);
+  QemuFwCfgReadBytes (FwCfgSize, Buffer);
+  Buffer[FwCfgSize] = '\0';
+
+  *Value = Buffer;
+  return EFI_SUCCESS;
+}
+
+STATIC
+BOOLEAN
+ScorpiSecureBootRequested (
+  VOID
+  )
+{
+  CHAR8       *Value;
+  BOOLEAN     Requested;
+  EFI_STATUS  Status;
+
+  Status = ScorpiGetFwCfgString ("opt/scorpi/secure-boot", &Value);
+  if (EFI_ERROR (Status)) {
+    return TRUE;
+  }
+
+  Requested = TRUE;
+  if (AsciiEqualsCi (Value, "off")) {
+    Requested = FALSE;
+  } else if (!AsciiEqualsCi (Value, "on")) {
+    DEBUG ((DEBUG_WARN, "%a: invalid opt/scorpi/secure-boot='%a', defaulting on\n", __func__, Value));
+  }
+
+  FreePool (Value);
+  return Requested;
+}
 
 STATIC
 EFI_STATUS
@@ -300,6 +392,11 @@ ScorpiSecureBootEnrollEntryPoint (
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "%a: SbatLevelRT repair failed: %r\n", __func__, Status));
     return Status;
+  }
+
+  if (!ScorpiSecureBootRequested ()) {
+    DEBUG ((DEBUG_INFO, "%a: secure boot disabled by fw_cfg, skipping enrollment\n", __func__));
+    return EFI_SUCCESS;
   }
 
   if (IsSecureBootEnabled ()) {
