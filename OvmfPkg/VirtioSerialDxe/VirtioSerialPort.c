@@ -133,6 +133,15 @@ VirtioSerialIoGetControl (
   OUT UINT32                 *Control
   )
 {
+  VIRTIO_SERIAL_IO_PROTOCOL  *SerialIo = (VIRTIO_SERIAL_IO_PROTOCOL *)This;
+
+  *Control = EFI_SERIAL_OUTPUT_BUFFER_EMPTY;
+  if ((SerialIo->ReadOffset == SerialIo->ReadSize) &&
+      !VirtioSerialRingHasBuffer (SerialIo->Dev, PortRx (SerialIo->PortId)))
+  {
+    *Control |= EFI_SERIAL_INPUT_BUFFER_EMPTY;
+  }
+
   DEBUG ((DEBUG_VERBOSE, "%a:%d: Control 0x%x\n", __func__, __LINE__, *Control));
   return EFI_SUCCESS;
 }
@@ -159,9 +168,7 @@ VirtioSerialIoWrite (
   VirtioSerialRingClearTx (SerialIo->Dev, PortTx (SerialIo->PortId));
 
   OldTpl = gBS->RaiseTPL (TPL_NOTIFY);
-  if (SerialIo->WriteOffset &&
-      (SerialIo->WriteOffset + *BufferSize > PORT_TX_BUFSIZE))
-  {
+  if (SerialIo->WriteOffset) {
     DEBUG ((DEBUG_VERBOSE, "%a:%d: WriteFlush %d\n", __func__, __LINE__, SerialIo->WriteOffset));
     VirtioSerialRingSendBuffer (
       SerialIo->Dev,
@@ -173,10 +180,15 @@ VirtioSerialIoWrite (
     SerialIo->WriteOffset = 0;
   }
 
-  Length = MIN ((UINT32)(*BufferSize), PORT_TX_BUFSIZE - SerialIo->WriteOffset);
-  CopyMem (SerialIo->WriteBuffer + SerialIo->WriteOffset, Buffer, Length);
-  SerialIo->WriteOffset += Length;
-  *BufferSize            = Length;
+  Length = MIN ((UINT32)(*BufferSize), PORT_TX_BUFSIZE);
+  VirtioSerialRingSendBuffer (
+    SerialIo->Dev,
+    PortTx (SerialIo->PortId),
+    Buffer,
+    Length,
+    TRUE
+    );
+  *BufferSize = Length;
   gBS->RestoreTPL (OldTpl);
 
   return EFI_SUCCESS;
