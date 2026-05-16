@@ -171,7 +171,6 @@ ScorpiPublishRange (
       break;
     case SCORPI_X64_ENTRY_RESERVED_RANGE:
       PlatformAddReservedMemoryBaseSizeHob (Range->Base, Range->Size, FALSE);
-      BuildMemoryAllocationHob (Range->Base, Range->Size, EfiReservedMemoryType);
       break;
     default:
       break;
