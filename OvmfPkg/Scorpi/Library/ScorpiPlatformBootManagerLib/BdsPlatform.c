@@ -519,9 +519,7 @@ PlatformBootManagerBeforeConsole (
   // definition from Xen as it is very generic.
   //
   PlatformInitializeConsole (
-    (XenDetected () ||
-     (PcdGet16 (PcdOvmfHostBridgePciDevId) == CLOUDHV_DEVICE_ID) ||
-     (PcdGet16 (PcdOvmfHostBridgePciDevId) == 0)) ? gXenPlatformConsole : gPlatformConsole
+    XenDetected () ? gXenPlatformConsole : gPlatformConsole
     );
 
   //
@@ -552,8 +550,7 @@ PlatformBootManagerBeforeConsole (
   // GPU passthrough only allows Console enablement after ROM image load
   //
   PlatformInitializeConsole (
-    (XenDetected () ||
-     (PcdGet16 (PcdOvmfHostBridgePciDevId) == 0)) ? gXenPlatformConsole : gPlatformConsole
+    XenDetected () ? gXenPlatformConsole : gPlatformConsole
     );
 
   FrontPageTimeout = GetFrontPageTimeoutFromQemu ();
