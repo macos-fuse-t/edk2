@@ -939,7 +939,7 @@ GetGopDevicePath (
   // on them, then we get device paths of these child handles and select
   // them as possible console device.
   //
-  gBS->ConnectController (PciDeviceHandle, NULL, NULL, FALSE);
+  gBS->ConnectController (PciDeviceHandle, NULL, NULL, TRUE);
 
   Status = gBS->LocateHandleBuffer (
                   ByProtocol,
