@@ -242,13 +242,17 @@ EmuGopDriverBindingStart (
       "BHYVE GOP: Using mmio bar @ 0x%lx\n",
       MmioDesc->AddrRangeMin
       ));
-      
-    BhyveGetGraphicsMode (Private->PciIo, &Width, &Height, &Depth);
-    PcdSet32S (PcdVideoHorizontalResolution, Width);
-    PcdSet32S (PcdVideoVerticalResolution, Height);
 
-    BhyveGetMemregs (Private, &Memregs);
-    Private->FbSize = Memregs.FbSize;
+    BhyveGetGraphicsMode (Private->PciIo, &Width, &Height, &Depth);
+    Status = PcdSet32S (PcdVideoHorizontalResolution, Width);
+    if (!EFI_ERROR (Status)) {
+      Status = PcdSet32S (PcdVideoVerticalResolution, Height);
+    }
+
+    if (!EFI_ERROR (Status)) {
+      BhyveGetMemregs (Private, &Memregs);
+      Private->FbSize = Memregs.FbSize;
+    }
   }
 
   if (MmioDesc != NULL) {
