@@ -54,6 +54,7 @@ typedef struct {
   UINTN     Bus;
   UINTN     Device;
   UINTN     Function;
+  UINT8     IntPin;
 } SCORPI_UART_INFO;
 
 typedef struct PlatformRepositoryInfo {
@@ -412,6 +413,27 @@ ScorpiBuildPciInterruptMaps (
 }
 
 STATIC
+BOOLEAN
+ScorpiPciIntxGsi (
+  IN  UINTN   Device,
+  IN  UINT8   IntPin,
+  OUT UINT32  *Gsi
+  )
+{
+  if ((IntPin == 0) ||
+      (IntPin > SCORPI_PCI_INTX_COUNT) ||
+      (Device < SCORPI_PCI_PRT_FIRST_DEVICE) ||
+      (Device >= SCORPI_PCI_PRT_FIRST_DEVICE + SCORPI_PCI_PRT_DEVICE_COUNT))
+  {
+    return FALSE;
+  }
+
+  *Gsi = SCORPI_PCI_IRQ_BASE +
+         ((Device + (IntPin - 1)) % SCORPI_PCI_INTX_COUNT);
+  return TRUE;
+}
+
+STATIC
 EFI_STATUS
 ScorpiBuildMadtTable (
   IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
@@ -578,6 +600,13 @@ ScorpiFindPciUart (
                    1,
                    &Uart->DeviceId
                    );
+      PciIo->Pci.Read (
+                   PciIo,
+                   EfiPciIoWidthUint8,
+                   PCI_INT_PIN_OFFSET,
+                   1,
+                   &Uart->IntPin
+                   );
       PciIo->GetLocation (
                PciIo,
                &Uart->Segment,
@@ -607,6 +636,7 @@ ScorpiBuildSpcrTable (
   SCORPI_UART_INFO                                      Uart;
   CM_STD_OBJ_ACPI_TABLE_INFO                            *TableInfo;
   EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE        *Spcr;
+  UINT32                                                UartGsi;
 
   Status = ScorpiFindPciUart (&Uart);
   if (EFI_ERROR (Status)) {
@@ -633,7 +663,10 @@ ScorpiBuildSpcrTable (
   Spcr->BaseAddress.RegisterBitOffset = 0;
   Spcr->BaseAddress.AccessSize        = EFI_ACPI_6_5_BYTE;
   Spcr->BaseAddress.Address           = Uart.Base;
-  Spcr->InterruptType        = 0;
+  if (ScorpiPciIntxGsi (Uart.Device, Uart.IntPin, &UartGsi)) {
+    Spcr->InterruptType         = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_INTERRUPT_TYPE_APIC;
+    Spcr->GlobalSystemInterrupt = UartGsi;
+  }
   Spcr->BaudRate             = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_115200;
   Spcr->Parity               = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_PARITY_NO_PARITY;
   Spcr->StopBits             = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_STOP_BITS_1;
@@ -657,14 +690,16 @@ ScorpiBuildSpcrTable (
 
   DEBUG ((
     DEBUG_INFO,
-    "%a: SPCR UART base=0x%Lx size=0x%Lx pci=%u:%u:%u.%u\n",
+    "%a: SPCR UART base=0x%Lx size=0x%Lx pci=%u:%u:%u.%u intpin=%u gsi=%u\n",
     __func__,
     Uart.Base,
     Uart.Size,
     (UINT32)Uart.Segment,
     (UINT32)Uart.Bus,
     (UINT32)Uart.Device,
-    (UINT32)Uart.Function
+    (UINT32)Uart.Function,
+    (UINT32)Uart.IntPin,
+    Spcr->GlobalSystemInterrupt
     ));
 
   return EFI_SUCCESS;
