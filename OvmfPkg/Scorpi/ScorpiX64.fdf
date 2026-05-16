@@ -234,6 +234,11 @@ INF  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
 INF  OvmfPkg/VirtioSerialDxe/VirtioSerial.inf
 INF  OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
 INF  OvmfPkg/VirtioRngDxe/VirtioRng.inf
+INF  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+INF  MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+INF  MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+INF  MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
+INF  MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
 !if $(PVSCSI_ENABLE) == TRUE
 INF  OvmfPkg/PvScsiDxe/PvScsiDxe.inf
 !endif

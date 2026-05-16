@@ -175,6 +175,7 @@
   NvVarsFileLib|OvmfPkg/Library/NvVarsFileLib/NvVarsFileLib.inf
   FileHandleLib|MdePkg/Library/UefiFileHandleLib/UefiFileHandleLib.inf
   SecurityManagementLib|MdeModulePkg/Library/DxeSecurityManagementLib/DxeSecurityManagementLib.inf
+  UefiUsbLib|MdePkg/Library/UefiUsbLib/UefiUsbLib.inf
   SerializeVariablesLib|OvmfPkg/Library/SerializeVariablesLib/SerializeVariablesLib.inf
   QemuFwCfgLib|OvmfPkg/Library/QemuFwCfgLib/QemuFwCfgDxeLib.inf
   AcpiHelperLib|DynamicTablesPkg/Library/Common/AcpiHelperLib/AcpiHelperLib.inf
@@ -775,6 +776,15 @@
   OvmfPkg/VirtioSerialDxe/VirtioSerial.inf
   OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
   OvmfPkg/VirtioRngDxe/VirtioRng.inf
+
+  #
+  # USB controller and HID support.
+  #
+  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
+  MdeModulePkg/Bus/Usb/UsbBusDxe/UsbBusDxe.inf
+  MdeModulePkg/Bus/Usb/UsbKbDxe/UsbKbDxe.inf
+  MdeModulePkg/Bus/Usb/UsbMouseDxe/UsbMouseDxe.inf
+  MdeModulePkg/Bus/Usb/UsbMouseAbsolutePointerDxe/UsbMouseAbsolutePointerDxe.inf
 !if $(PVSCSI_ENABLE) == TRUE
   OvmfPkg/PvScsiDxe/PvScsiDxe.inf
 !endif
