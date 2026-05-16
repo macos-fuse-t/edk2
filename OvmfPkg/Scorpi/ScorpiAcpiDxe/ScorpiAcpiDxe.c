@@ -36,6 +36,12 @@ extern CHAR8  dsdt_aml_code[];
 
 #define SCORPI_PCI_UART_BAR  0
 
+#define SCORPI_PCI_PRT_FIRST_DEVICE    1
+#define SCORPI_PCI_PRT_DEVICE_COUNT    2
+#define SCORPI_PCI_INTX_COUNT          4
+#define SCORPI_PCI_IRQ_BASE            16
+#define SCORPI_PCI_INTERRUPT_MAP_COUNT (SCORPI_PCI_PRT_DEVICE_COUNT * SCORPI_PCI_INTX_COUNT)
+
 #define SCORPI_PCI_SPACE_M32  2
 #define SCORPI_PCI_SPACE_M64  3
 
@@ -60,6 +66,8 @@ typedef struct PlatformRepositoryInfo {
   CM_ARCH_COMMON_OBJ_REF                          *PciAddressMapRefs;
   CM_ARCH_COMMON_PCI_ADDRESS_MAP_INFO             *PciAddressMaps;
   UINT32                                          PciAddressMapCount;
+  CM_ARCH_COMMON_OBJ_REF                          PciInterruptMapRefs[SCORPI_PCI_INTERRUPT_MAP_COUNT];
+  CM_ARCH_COMMON_PCI_INTERRUPT_MAP_INFO           PciInterruptMaps[SCORPI_PCI_INTERRUPT_MAP_COUNT];
   CM_X64_FADT_SCI_INTERRUPT                       FadtSciInterrupt;
   CM_X64_FADT_SCI_CMD_INFO                        FadtSciCmdInfo;
   CM_X64_FADT_PM_BLOCK_INFO                       FadtPmBlockInfo;
@@ -370,6 +378,37 @@ ScorpiBuildPciAddressMaps (
   Repo->PciConfigSpace.AddressMapToken = (CM_OBJECT_TOKEN)Repo->PciAddressMapRefs;
 
   return EFI_SUCCESS;
+}
+
+STATIC
+VOID
+ScorpiBuildPciInterruptMaps (
+  IN OUT EDKII_PLATFORM_REPOSITORY_INFO  *Repo
+  )
+{
+  UINT32  Device;
+  UINT32  Index;
+  UINT32  Pin;
+
+  for (Device = 0; Device < SCORPI_PCI_PRT_DEVICE_COUNT; Device++) {
+    for (Pin = 0; Pin < SCORPI_PCI_INTX_COUNT; Pin++) {
+      Index = Device * SCORPI_PCI_INTX_COUNT + Pin;
+      Repo->PciInterruptMapRefs[Index].ReferenceToken =
+        (CM_OBJECT_TOKEN)&Repo->PciInterruptMaps[Index];
+      Repo->PciInterruptMaps[Index].PciBus                  = 0;
+      Repo->PciInterruptMaps[Index].PciDevice               =
+        (UINT8)(SCORPI_PCI_PRT_FIRST_DEVICE + Device);
+      Repo->PciInterruptMaps[Index].PciInterrupt            = (UINT8)Pin;
+      Repo->PciInterruptMaps[Index].IntcInterrupt.Interrupt =
+        SCORPI_PCI_IRQ_BASE +
+        ((SCORPI_PCI_PRT_FIRST_DEVICE + Device + Pin) %
+         SCORPI_PCI_INTX_COUNT);
+      Repo->PciInterruptMaps[Index].IntcInterrupt.Flags = 0;
+    }
+  }
+
+  Repo->PciConfigSpace.InterruptMapToken =
+    (CM_OBJECT_TOKEN)Repo->PciInterruptMapRefs;
 }
 
 STATIC
@@ -685,7 +724,7 @@ ScorpiLoadHwInfo (
   Repo->PciConfigSpace.StartBusNumber        = Ecam->StartBus;
   Repo->PciConfigSpace.EndBusNumber          = Ecam->EndBus;
   Repo->PciConfigSpace.AddressMapToken       = CM_NULL_TOKEN;
-  Repo->PciConfigSpace.InterruptMapToken     = CM_NULL_TOKEN;
+  ScorpiBuildPciInterruptMaps (Repo);
 
   Status = ScorpiBuildPciAddressMaps (&HwInfo, Repo);
   if (EFI_ERROR (Status)) {
@@ -786,6 +825,16 @@ ScorpiGetArchCommonObject (
                  );
       }
 
+      if (Token == (CM_OBJECT_TOKEN)Repo->PciInterruptMapRefs) {
+        return ScorpiHandleObject (
+                 CmObjectId,
+                 Repo->PciInterruptMapRefs,
+                 sizeof (Repo->PciInterruptMapRefs),
+                 ARRAY_SIZE (Repo->PciInterruptMapRefs),
+                 CmObject
+                 );
+      }
+
       return EFI_NOT_FOUND;
     case EArchCommonObjPciConfigSpaceInfo:
       return ScorpiHandleObject (CmObjectId, &Repo->PciConfigSpace, sizeof (Repo->PciConfigSpace), 1, CmObject);
@@ -806,6 +855,30 @@ ScorpiGetArchCommonObject (
                    CmObjectId,
                    &Repo->PciAddressMaps[Index],
                    sizeof (Repo->PciAddressMaps[Index]),
+                   1,
+                   CmObject
+                   );
+        }
+      }
+
+      return EFI_NOT_FOUND;
+    case EArchCommonObjPciInterruptMapInfo:
+      if (Token == CM_NULL_TOKEN) {
+        return ScorpiHandleObject (
+                 CmObjectId,
+                 Repo->PciInterruptMaps,
+                 sizeof (Repo->PciInterruptMaps),
+                 ARRAY_SIZE (Repo->PciInterruptMaps),
+                 CmObject
+                 );
+      }
+
+      for (Index = 0; Index < ARRAY_SIZE (Repo->PciInterruptMaps); Index++) {
+        if (Token == (CM_OBJECT_TOKEN)&Repo->PciInterruptMaps[Index]) {
+          return ScorpiHandleObject (
+                   CmObjectId,
+                   &Repo->PciInterruptMaps[Index],
+                   sizeof (Repo->PciInterruptMaps[Index]),
                    1,
                    CmObject
                    );
