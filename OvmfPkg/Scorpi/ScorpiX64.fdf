@@ -251,8 +251,6 @@ INF  MdeModulePkg/Universal/MonotonicCounterRuntimeDxe/MonotonicCounterRuntimeDx
 INF  MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
 INF  MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
 INF  MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
-INF  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
-INF  OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf
 INF  MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
 INF  MdeModulePkg/Universal/DriverHealthManagerDxe/DriverHealthManagerDxe.inf
 INF  MdeModulePkg/Universal/BdsDxe/BdsDxe.inf

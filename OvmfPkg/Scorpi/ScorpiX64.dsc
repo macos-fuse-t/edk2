@@ -782,15 +782,6 @@
   MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
   MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
   MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
-  MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf {
-    <LibraryClasses>
-      PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
-  }
-  OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf {
-    <LibraryClasses>
-      BltLib|MdeModulePkg/Library/FrameBufferBltLib/FrameBufferBltLib.inf
-      PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
-  }
   MdeModulePkg/Universal/Console/TerminalDxe/TerminalDxe.inf
   MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf {
     <LibraryClasses>
