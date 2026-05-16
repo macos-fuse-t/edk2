@@ -88,6 +88,7 @@
 
 [LibraryClasses.AARCH64]
   ArmPlatformLib|ArmVirtPkg/Library/ScorpiPlatformLib/ScorpiPlatformLib.inf
+  ArmGenericTimerCounterLib|ArmVirtPkg/Library/ScorpiArmGenericTimerCounterLib/ScorpiArmGenericTimerCounterLib.inf
 
 [LibraryClasses.ARM]
   ArmPlatformLib|ArmPlatformPkg/Library/ArmPlatformLibNull/ArmPlatformLibNull.inf
