@@ -1579,6 +1579,12 @@ PciAcpiInitialization (
   //
   mHostBridgeDevId = PcdGet16 (PcdOvmfHostBridgePciDevId);
   switch (mHostBridgeDevId) {
+    case 0:
+      //
+      // Scorpi does not expose a legacy southbridge for INTx routing or
+      // ACPI PM control.
+      //
+      return;
     case INTEL_82441_DEVICE_ID:
       Pmba = POWER_MGMT_REGISTER_PIIX4 (PIIX4_PMBA);
       //
