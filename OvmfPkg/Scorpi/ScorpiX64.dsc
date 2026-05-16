@@ -807,6 +807,11 @@
   MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
 
   #
+  # PCI serial console support
+  #
+  MdeModulePkg/Bus/Pci/PciSioSerialDxe/PciSioSerialDxe.inf
+
+  #
   # Serial Support
   #
   MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
