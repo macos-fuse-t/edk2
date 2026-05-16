@@ -1,0 +1,51 @@
+## @file
+#  Scorpi X64 ACPI configuration manager.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 1.29
+  BASE_NAME                      = ScorpiAcpiDxe
+  FILE_GUID                      = 7fcb0644-3650-4280-871c-fa9f30cea45a
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ScorpiAcpiDxeInitialize
+  UNLOAD_IMAGE                   = ScorpiAcpiDxeUnloadImage
+
+#
+# The following information is for reference only and not required by the build
+# tools.
+#
+#  VALID_ARCHITECTURES           = X64
+#
+
+[Sources]
+  AslTables/Dsdt.asl
+  ScorpiAcpiDxe.c
+
+[Packages]
+  DynamicTablesPkg/DynamicTablesPkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  MdePkg/MdePkg.dec
+  OvmfPkg/OvmfPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  PcdLib
+  ScorpiHwInfoLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+
+[Protocols]
+  gEdkiiConfigurationManagerProtocolGuid
+
+[Pcd]
+  gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
+
+[Depex]
+  TRUE
