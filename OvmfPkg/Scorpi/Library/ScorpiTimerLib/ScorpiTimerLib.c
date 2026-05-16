@@ -1,5 +1,5 @@
 /** @file
-  Scorpi x64 TSC timer library.
+  Scorpi x64 local APIC timer library.
 
   SPDX-License-Identifier: BSD-2-Clause-Patent
 
@@ -7,67 +7,120 @@
 
 #include <Base.h>
 #include <Library/BaseLib.h>
+#include <Library/IoLib.h>
 #include <Library/TimerLib.h>
-#include <Register/Intel/Cpuid.h>
+#include <Register/Intel/ArchitecturalMsr.h>
 
-#define SCORPI_FALLBACK_TSC_HZ  1000000000ULL
-#define SCORPI_DEFAULT_XTAL_HZ  24000000ULL
+#define SCORPI_APIC_BASE_DEFAULT  0xFEE00000ULL
+#define SCORPI_APIC_BUS_HZ        1000000000ULL
+#define SCORPI_APIC_DIVISOR       16ULL
+#define SCORPI_APIC_TIMER_HZ      (SCORPI_APIC_BUS_HZ / SCORPI_APIC_DIVISOR)
+#define SCORPI_APIC_TIMER_INIT    MAX_UINT32
+#define SCORPI_APIC_DELAY_MAX     (SCORPI_APIC_TIMER_INIT / 2)
 
-STATIC UINT64  mTscHz;
+#define APIC_SVR        0x0F0
+#define APIC_LVT_TIMER  0x320
+#define APIC_TMICT      0x380
+#define APIC_TMCCT      0x390
+#define APIC_TDCR       0x3E0
 
-STATIC
-UINT64
-ScorpiTscHz (
+#define APIC_SVR_ENABLE       BIT8
+#define APIC_LVT_MASKED       BIT16
+#define APIC_LVT_PERIODIC     BIT17
+#define APIC_TDCR_DIVIDE_16   0x3
+#define APIC_SPURIOUS_VECTOR  0xFF
+#define APIC_TIMER_VECTOR     0xEF
+
+STATIC UINTN
+ScorpiApicBase (
   VOID
   )
 {
-  UINT32  MaxLeaf;
-  UINT32  Eax;
-  UINT32  Ebx;
-  UINT32  Ecx;
-  UINT64  Hz;
+  MSR_IA32_APIC_BASE_REGISTER  ApicBase;
+  UINTN                        Base;
 
-  if (mTscHz != 0) {
-    return mTscHz;
+  ApicBase.Uint64  = AsmReadMsr64 (MSR_IA32_APIC_BASE);
+  ApicBase.Bits.EN = 1;
+  ApicBase.Bits.EXTD = 0;
+
+  Base = (UINTN)(ApicBase.Uint64 & 0xFFFFFF000ULL);
+  if (Base == 0) {
+    Base = SCORPI_APIC_BASE_DEFAULT;
+    ApicBase.Uint64 = (ApicBase.Uint64 & ~0xFFFFFF000ULL) | Base;
   }
 
-  AsmCpuid (0, &MaxLeaf, NULL, NULL, NULL);
+  AsmWriteMsr64 (MSR_IA32_APIC_BASE, ApicBase.Uint64);
+  return Base;
+}
 
-  if (MaxLeaf >= CPUID_TIME_STAMP_COUNTER) {
-    AsmCpuid (CPUID_TIME_STAMP_COUNTER, &Eax, &Ebx, &Ecx, NULL);
-    if ((Eax != 0) && (Ebx != 0)) {
-      Hz = MultU64x32 ((Ecx == 0) ? SCORPI_DEFAULT_XTAL_HZ : Ecx, Ebx);
-      Hz = DivU64x32 (Hz + (Eax >> 1), Eax);
-      if (Hz != 0) {
-        mTscHz = Hz;
-        return mTscHz;
-      }
-    }
+STATIC
+UINTN
+ScorpiApicInit (
+  VOID
+  )
+{
+  UINTN   Base;
+  UINT32  Svr;
+
+  Base = ScorpiApicBase ();
+
+  Svr = MmioRead32 (Base + APIC_SVR);
+  MmioWrite32 (Base + APIC_SVR, (Svr | APIC_SVR_ENABLE) | APIC_SPURIOUS_VECTOR);
+
+  MmioWrite32 (Base + APIC_TDCR, APIC_TDCR_DIVIDE_16);
+  MmioWrite32 (
+    Base + APIC_LVT_TIMER,
+    APIC_LVT_MASKED | APIC_LVT_PERIODIC | APIC_TIMER_VECTOR
+    );
+
+  if (MmioRead32 (Base + APIC_TMICT) != SCORPI_APIC_TIMER_INIT) {
+    MmioWrite32 (Base + APIC_TMICT, SCORPI_APIC_TIMER_INIT);
   }
 
-  if (MaxLeaf >= CPUID_PROCESSOR_FREQUENCY) {
-    AsmCpuid (CPUID_PROCESSOR_FREQUENCY, &Eax, NULL, NULL, NULL);
-    if (Eax != 0) {
-      mTscHz = MultU64x32 (Eax, 1000000);
-      return mTscHz;
-    }
-  }
+  return Base;
+}
 
-  mTscHz = SCORPI_FALLBACK_TSC_HZ;
-  return mTscHz;
+STATIC
+UINT32
+ScorpiApicCounter (
+  IN UINTN  Base
+  )
+{
+  return MmioRead32 (Base + APIC_TMCCT);
+}
+
+STATIC
+UINT32
+ScorpiApicElapsed (
+  IN UINT32  Start,
+  IN UINT32  Current
+  )
+{
+  return Start - Current;
 }
 
 STATIC
 VOID
-ScorpiDelay (
+ScorpiApicDelay (
   IN UINT64  Ticks
   )
 {
-  UINT64  End;
+  UINTN   Base;
+  UINT32  Chunk;
+  UINT32  Start;
 
-  End = AsmReadTsc () + Ticks;
-  while (AsmReadTsc () < End) {
-    CpuPause ();
+  Base = ScorpiApicInit ();
+  while (Ticks > 0) {
+    Chunk = (Ticks > SCORPI_APIC_DELAY_MAX) ?
+            SCORPI_APIC_DELAY_MAX :
+            (UINT32)Ticks;
+    Start = ScorpiApicCounter (Base);
+
+    while (ScorpiApicElapsed (Start, ScorpiApicCounter (Base)) < Chunk) {
+      CpuPause ();
+    }
+
+    Ticks -= Chunk;
   }
 }
 
@@ -77,8 +130,8 @@ MicroSecondDelay (
   IN UINTN  MicroSeconds
   )
 {
-  ScorpiDelay (
-    DivU64x32 (MultU64x64 (MicroSeconds, ScorpiTscHz ()), 1000000)
+  ScorpiApicDelay (
+    DivU64x32 (MultU64x64 (MicroSeconds, SCORPI_APIC_TIMER_HZ), 1000000)
     );
 
   return MicroSeconds;
@@ -90,8 +143,8 @@ NanoSecondDelay (
   IN UINTN  NanoSeconds
   )
 {
-  ScorpiDelay (
-    DivU64x32 (MultU64x64 (NanoSeconds, ScorpiTscHz ()), 1000000000)
+  ScorpiApicDelay (
+    DivU64x32 (MultU64x64 (NanoSeconds, SCORPI_APIC_TIMER_HZ), 1000000000)
     );
 
   return NanoSeconds;
@@ -103,7 +156,7 @@ GetPerformanceCounter (
   VOID
   )
 {
-  return AsmReadTsc ();
+  return ScorpiApicCounter (ScorpiApicInit ());
 }
 
 UINT64
@@ -113,15 +166,17 @@ GetPerformanceCounterProperties (
   OUT UINT64  *EndValue    OPTIONAL
   )
 {
+  ScorpiApicInit ();
+
   if (StartValue != NULL) {
-    *StartValue = 0;
+    *StartValue = SCORPI_APIC_TIMER_INIT;
   }
 
   if (EndValue != NULL) {
-    *EndValue = MAX_UINT64;
+    *EndValue = 0;
   }
 
-  return ScorpiTscHz ();
+  return SCORPI_APIC_TIMER_HZ;
 }
 
 UINT64
@@ -130,25 +185,26 @@ GetTimeInNanoSecond (
   IN UINT64  Ticks
   )
 {
-  UINT64  Frequency;
   UINT64  NanoSeconds;
   UINT64  Remainder;
   INTN    Shift;
 
-  Frequency = ScorpiTscHz ();
   NanoSeconds = MultU64x32 (
-                  DivU64x64Remainder (Ticks, Frequency, &Remainder),
+                  DivU64x64Remainder (
+                    Ticks,
+                    SCORPI_APIC_TIMER_HZ,
+                    &Remainder
+                    ),
                   1000000000
                   );
 
   Shift = MAX (0, HighBitSet64 (Remainder) - 33);
   Remainder = RShiftU64 (Remainder, (UINTN)Shift);
-  Frequency = RShiftU64 (Frequency, (UINTN)Shift);
 
   return NanoSeconds +
          DivU64x64Remainder (
            MultU64x32 (Remainder, 1000000000),
-           Frequency,
+           RShiftU64 (SCORPI_APIC_TIMER_HZ, (UINTN)Shift),
            NULL
            );
 }

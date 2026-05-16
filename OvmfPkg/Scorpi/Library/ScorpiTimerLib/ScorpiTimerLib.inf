@@ -1,5 +1,5 @@
 ## @file
-#  Scorpi x64 TSC timer library.
+#  Scorpi x64 local APIC timer library.
 #
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -21,3 +21,4 @@
 
 [LibraryClasses]
   BaseLib
+  IoLib
