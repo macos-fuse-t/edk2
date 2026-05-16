@@ -420,13 +420,6 @@ ScorpiPlatformPeiEntry (
 
   DEBUG ((DEBUG_INFO, "Scorpi X64 Platform PEIM Loaded\n"));
 
-  ReturnStatus = ScorpiHwInfoRead (&HwInfo);
-  if (RETURN_ERROR (ReturnStatus)) {
-    DEBUG ((DEBUG_ERROR, "%a: ScorpiHwInfoRead: %r\n", __func__, ReturnStatus));
-    ASSERT_RETURN_ERROR (ReturnStatus);
-    CpuDeadLoop ();
-  }
-
   PlatformInfoHob                         = ScorpiBuildPlatformInfoHob ();
   PlatformInfoHob->BootMode              = BOOT_WITH_FULL_CONFIGURATION;
   PlatformInfoHob->S3Supported           = FALSE;
@@ -439,6 +432,13 @@ ScorpiPlatformPeiEntry (
   PlatformInfoHob->QemuFwCfgChecked      = TRUE;
   PlatformInfoHob->QemuFwCfgSupported    = TRUE;
   PlatformInfoHob->QemuFwCfgDmaSupported = FALSE;
+
+  ReturnStatus = ScorpiHwInfoRead (&HwInfo);
+  if (RETURN_ERROR (ReturnStatus)) {
+    DEBUG ((DEBUG_ERROR, "%a: ScorpiHwInfoRead: %r\n", __func__, ReturnStatus));
+    ASSERT_RETURN_ERROR (ReturnStatus);
+    CpuDeadLoop ();
+  }
 
   Status = PeiServicesSetBootMode (PlatformInfoHob->BootMode);
   ASSERT_EFI_ERROR (Status);
