@@ -812,11 +812,6 @@
   MdeModulePkg/Bus/Pci/PciSioSerialDxe/PciSioSerialDxe.inf
 
   #
-  # Serial Support
-  #
-  MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
-
-  #
   # SMBIOS Support
   #
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf {

@@ -274,8 +274,6 @@ INF  MdeModulePkg/Universal/DisplayEngineDxe/DisplayEngineDxe.inf
 
 INF  MdeModulePkg/Bus/Pci/PciSioSerialDxe/PciSioSerialDxe.inf
 
-INF  MdeModulePkg/Universal/SerialDxe/SerialDxe.inf
-
 INF  MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
 INF  OvmfPkg/SmbiosPlatformDxe/SmbiosPlatformDxe.inf
 
