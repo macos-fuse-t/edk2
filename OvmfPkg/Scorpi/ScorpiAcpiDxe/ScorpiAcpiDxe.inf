@@ -43,9 +43,11 @@
 
 [Protocols]
   gEdkiiConfigurationManagerProtocolGuid
+  gEfiPciEnumerationCompleteProtocolGuid
+  gEfiPciIoProtocolGuid
 
 [Pcd]
   gEfiMdePkgTokenSpaceGuid.PcdPciExpressBaseAddress
 
 [Depex]
-  TRUE
+  gEfiPciEnumerationCompleteProtocolGuid

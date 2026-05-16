@@ -9,7 +9,9 @@
 #include <ArchCommonNameSpaceObjects.h>
 #include <ConfigurationManagerObject.h>
 #include <IndustryStandard/Acpi65.h>
+#include <IndustryStandard/Pci22.h>
 #include <IndustryStandard/MemoryMappedConfigurationSpaceAccessTable.h>
+#include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
 #include <IndustryStandard/ScorpiX64HwInfo.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
@@ -18,6 +20,7 @@
 #include <Library/PcdLib.h>
 #include <Library/ScorpiHwInfoLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Protocol/PciIo.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
 #include <X64NameSpaceObjects.h>
 
@@ -28,14 +31,29 @@ extern CHAR8  dsdt_aml_code[];
 #define SCORPI_OEM_TABLE_ID      SIGNATURE_64 ('S', 'C', 'O', 'R', 'P', 'I', 'X', '6')
 #define SCORPI_CREATOR_ID        SIGNATURE_32 ('S', 'C', 'P', 'I')
 
-#define SCORPI_ACPI_TABLE_COUNT  5
+#define SCORPI_ACPI_BASE_TABLE_COUNT  5
+#define SCORPI_ACPI_TABLE_COUNT       6
+
+#define SCORPI_PCI_UART_BAR  0
 
 #define SCORPI_PCI_SPACE_M32  2
 #define SCORPI_PCI_SPACE_M64  3
 
+typedef struct {
+  UINT64    Base;
+  UINT64    Size;
+  UINT16    VendorId;
+  UINT16    DeviceId;
+  UINTN     Segment;
+  UINTN     Bus;
+  UINTN     Device;
+  UINTN     Function;
+} SCORPI_UART_INFO;
+
 typedef struct PlatformRepositoryInfo {
   CM_STD_OBJ_CONFIGURATION_MANAGER_INFO           CmInfo;
   CM_STD_OBJ_ACPI_TABLE_INFO                      AcpiTables[SCORPI_ACPI_TABLE_COUNT];
+  UINT32                                          AcpiTableCount;
   CM_ARCH_COMMON_POWER_MANAGEMENT_PROFILE_INFO    PowerProfile;
   CM_ARCH_COMMON_FIXED_FEATURE_FLAGS              FixedFeatureFlags;
   CM_ARCH_COMMON_PCI_CONFIG_SPACE_INFO            PciConfigSpace;
@@ -57,6 +75,7 @@ typedef struct PlatformRepositoryInfo {
   UINT32                                         LocalApicCount;
   EFI_ACPI_6_5_MULTIPLE_APIC_DESCRIPTION_TABLE_HEADER
                                                  *MadtTable;
+  EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE *SpcrTable;
 } EDKII_PLATFORM_REPOSITORY_INFO;
 
 STATIC EDKII_PLATFORM_REPOSITORY_INFO  mScorpiAcpiRepository = {
@@ -99,6 +118,7 @@ STATIC EDKII_PLATFORM_REPOSITORY_INFO  mScorpiAcpiRepository = {
       FALSE
     }
   },
+  SCORPI_ACPI_BASE_TABLE_COUNT,
   { EFI_ACPI_6_5_PM_PROFILE_ENTERPRISE_SERVER },
   { EFI_ACPI_6_5_HW_REDUCED_ACPI | EFI_ACPI_6_5_RESET_REG_SUP },
   { 0 }
@@ -182,6 +202,11 @@ ScorpiFreeRepository (
     Repo->MadtTable = NULL;
   }
 
+  if (Repo->SpcrTable != NULL) {
+    FreePool (Repo->SpcrTable);
+    Repo->SpcrTable = NULL;
+  }
+
   if (Repo->PciAddressMapRefs != NULL) {
     FreePool (Repo->PciAddressMapRefs);
     Repo->PciAddressMapRefs = NULL;
@@ -194,6 +219,7 @@ ScorpiFreeRepository (
 
   Repo->PciAddressMapCount             = 0;
   Repo->PciConfigSpace.AddressMapToken = CM_NULL_TOKEN;
+  Repo->AcpiTableCount                 = SCORPI_ACPI_BASE_TABLE_COUNT;
 }
 
 STATIC
@@ -424,6 +450,188 @@ ScorpiBuildMadtTable (
 
 STATIC
 EFI_STATUS
+ScorpiFindPciUart (
+  OUT SCORPI_UART_INFO  *Uart
+  )
+{
+  EFI_STATUS                         Status;
+  EFI_HANDLE                         *Handles;
+  EFI_PCI_IO_PROTOCOL                *PciIo;
+  EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR  *Bar;
+  VOID                               *Resources;
+  UINTN                              HandleCount;
+  UINTN                              Index;
+  UINT8                              ClassCode[3];
+
+  if (Uart == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  ZeroMem (Uart, sizeof (*Uart));
+  Handles     = NULL;
+  HandleCount = 0;
+  Status      = gBS->LocateHandleBuffer (
+                       ByProtocol,
+                       &gEfiPciIoProtocolGuid,
+                       NULL,
+                       &HandleCount,
+                       &Handles
+                       );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  for (Index = 0; Index < HandleCount; Index++) {
+    Status = gBS->HandleProtocol (
+                    Handles[Index],
+                    &gEfiPciIoProtocolGuid,
+                    (VOID **)&PciIo
+                    );
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    Status = PciIo->Pci.Read (
+                          PciIo,
+                          EfiPciIoWidthUint8,
+                          PCI_CLASSCODE_OFFSET,
+                          sizeof (ClassCode),
+                          ClassCode
+                          );
+    if (EFI_ERROR (Status) ||
+        (ClassCode[2] != PCI_CLASS_SCC) ||
+        (ClassCode[1] != PCI_SUBCLASS_SERIAL) ||
+        (ClassCode[0] != PCI_IF_16550))
+    {
+      continue;
+    }
+
+    Resources = NULL;
+    Status    = PciIo->GetBarAttributes (
+                         PciIo,
+                         SCORPI_PCI_UART_BAR,
+                         NULL,
+                         &Resources
+                         );
+    if (EFI_ERROR (Status) || (Resources == NULL)) {
+      continue;
+    }
+
+    Bar = (EFI_ACPI_ADDRESS_SPACE_DESCRIPTOR *)Resources;
+    if ((Bar->Desc == ACPI_ADDRESS_SPACE_DESCRIPTOR) &&
+        (Bar->ResType == ACPI_ADDRESS_SPACE_TYPE_MEM) &&
+        (Bar->AddrLen != 0))
+    {
+      Uart->Base = Bar->AddrRangeMin;
+      Uart->Size = Bar->AddrLen;
+      PciIo->Pci.Read (
+                   PciIo,
+                   EfiPciIoWidthUint16,
+                   PCI_VENDOR_ID_OFFSET,
+                   1,
+                   &Uart->VendorId
+                   );
+      PciIo->Pci.Read (
+                   PciIo,
+                   EfiPciIoWidthUint16,
+                   PCI_DEVICE_ID_OFFSET,
+                   1,
+                   &Uart->DeviceId
+                   );
+      PciIo->GetLocation (
+               PciIo,
+               &Uart->Segment,
+               &Uart->Bus,
+               &Uart->Device,
+               &Uart->Function
+               );
+      FreePool (Resources);
+      FreePool (Handles);
+      return EFI_SUCCESS;
+    }
+
+    FreePool (Resources);
+  }
+
+  FreePool (Handles);
+  return EFI_NOT_FOUND;
+}
+
+STATIC
+EFI_STATUS
+ScorpiBuildSpcrTable (
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
+  )
+{
+  EFI_STATUS                                            Status;
+  SCORPI_UART_INFO                                      Uart;
+  CM_STD_OBJ_ACPI_TABLE_INFO                            *TableInfo;
+  EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE        *Spcr;
+
+  Status = ScorpiFindPciUart (&Uart);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+  if (Repo->AcpiTableCount >= ARRAY_SIZE (Repo->AcpiTables)) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Spcr = AllocateZeroPool (sizeof (*Spcr));
+  if (Spcr == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  ScorpiAcpiHeader (
+    &Spcr->Header,
+    EFI_ACPI_6_5_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_SIGNATURE,
+    sizeof (*Spcr),
+    EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_REVISION
+    );
+  Spcr->InterfaceType = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_INTERFACE_TYPE_16550_WITH_GAS;
+  Spcr->BaseAddress.AddressSpaceId    = EFI_ACPI_6_5_SYSTEM_MEMORY;
+  Spcr->BaseAddress.RegisterBitWidth  = 8;
+  Spcr->BaseAddress.RegisterBitOffset = 0;
+  Spcr->BaseAddress.AccessSize        = EFI_ACPI_6_5_BYTE;
+  Spcr->BaseAddress.Address           = Uart.Base;
+  Spcr->InterruptType        = 0;
+  Spcr->BaudRate             = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_BAUD_RATE_115200;
+  Spcr->Parity               = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_PARITY_NO_PARITY;
+  Spcr->StopBits             = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_STOP_BITS_1;
+  Spcr->TerminalType         = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_TERMINAL_TYPE_VT_UTF8;
+  Spcr->PciDeviceId          = Uart.DeviceId;
+  Spcr->PciVendorId          = Uart.VendorId;
+  Spcr->PciBusNumber         = (UINT8)Uart.Bus;
+  Spcr->PciDeviceNumber      = (UINT8)Uart.Device;
+  Spcr->PciFunctionNumber    = (UINT8)Uart.Function;
+  Spcr->PciSegment           = (UINT8)Uart.Segment;
+  ScorpiAcpiChecksum (&Spcr->Header);
+
+  Repo->SpcrTable = Spcr;
+  TableInfo                     = &Repo->AcpiTables[Repo->AcpiTableCount];
+  TableInfo->AcpiTableSignature = EFI_ACPI_6_5_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_SIGNATURE;
+  TableInfo->AcpiTableRevision  = EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE_REVISION;
+  TableInfo->TableGeneratorId   = CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdRaw);
+  TableInfo->AcpiTableData      = &Spcr->Header;
+  TableInfo->SkipOnError        = FALSE;
+  Repo->AcpiTableCount++;
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: SPCR UART base=0x%Lx size=0x%Lx pci=%u:%u:%u.%u\n",
+    __func__,
+    Uart.Base,
+    Uart.Size,
+    (UINT32)Uart.Segment,
+    (UINT32)Uart.Bus,
+    (UINT32)Uart.Device,
+    (UINT32)Uart.Function
+    ));
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
 ScorpiLoadHwInfo (
   IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
   )
@@ -505,6 +713,15 @@ ScorpiLoadHwInfo (
   }
 
   Status = ScorpiBuildMadtTable (Repo);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
+  Status = ScorpiBuildSpcrTable (Repo);
+  if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
+    goto Exit;
+  }
+  Status = EFI_SUCCESS;
 
 Exit:
   ScorpiHwInfoRelease (&HwInfo);
@@ -530,8 +747,8 @@ ScorpiGetStandardObject (
       return ScorpiHandleObject (
                CmObjectId,
                Repo->AcpiTables,
-               sizeof (Repo->AcpiTables),
-               ARRAY_SIZE (Repo->AcpiTables),
+               sizeof (*Repo->AcpiTables) * Repo->AcpiTableCount,
+               Repo->AcpiTableCount,
                CmObject
                );
     default:
