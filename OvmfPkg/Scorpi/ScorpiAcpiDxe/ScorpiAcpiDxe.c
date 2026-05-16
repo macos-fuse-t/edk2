@@ -501,7 +501,8 @@ ScorpiFindPciUart (
     if (EFI_ERROR (Status) ||
         (ClassCode[2] != PCI_CLASS_SCC) ||
         (ClassCode[1] != PCI_SUBCLASS_SERIAL) ||
-        (ClassCode[0] != PCI_IF_16550))
+        ((ClassCode[0] != PCI_IF_16450) &&
+         (ClassCode[0] != PCI_IF_16550)))
     {
       continue;
     }
