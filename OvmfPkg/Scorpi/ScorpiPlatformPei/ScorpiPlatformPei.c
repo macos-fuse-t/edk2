@@ -270,6 +270,8 @@ ScorpiInitializeApic (
 
   Apic = (CONST SCORPI_X64_HWINFO_APIC *)Entry;
   ASSERT (Apic->LocalApicBase == PcdGet32 (PcdCpuLocalApicBaseAddress));
+  PlatformAddIoMemoryBaseSizeHob (Apic->IoApicBase, SIZE_4KB);
+  PlatformAddIoMemoryBaseSizeHob (Apic->LocalApicBase, SIZE_4KB);
 }
 
 STATIC
