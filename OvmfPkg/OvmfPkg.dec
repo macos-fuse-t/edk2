@@ -148,6 +148,10 @@
   #
   HardwareInfoLib|Include/Library/HardwareInfoLib.h
 
+  ##  @libraryclass  Read and validate Scorpi hardware info from fw_cfg.
+  #
+  ScorpiHwInfoLib|Include/Library/ScorpiHwInfoLib.h
+
   ##  @libraryclass  CPU MMU Initialization library.
   #
   CpuMmuInitLib|Include/Library/CpuMmuInitLib.h
