@@ -28,7 +28,10 @@ extern CHAR8  dsdt_aml_code[];
 #define SCORPI_OEM_TABLE_ID      SIGNATURE_64 ('S', 'C', 'O', 'R', 'P', 'I', 'X', '6')
 #define SCORPI_CREATOR_ID        SIGNATURE_32 ('S', 'C', 'P', 'I')
 
-#define SCORPI_ACPI_TABLE_COUNT  4
+#define SCORPI_ACPI_TABLE_COUNT  5
+
+#define SCORPI_PCI_SPACE_M32  2
+#define SCORPI_PCI_SPACE_M64  3
 
 typedef struct PlatformRepositoryInfo {
   CM_STD_OBJ_CONFIGURATION_MANAGER_INFO           CmInfo;
@@ -36,6 +39,9 @@ typedef struct PlatformRepositoryInfo {
   CM_ARCH_COMMON_POWER_MANAGEMENT_PROFILE_INFO    PowerProfile;
   CM_ARCH_COMMON_FIXED_FEATURE_FLAGS              FixedFeatureFlags;
   CM_ARCH_COMMON_PCI_CONFIG_SPACE_INFO            PciConfigSpace;
+  CM_ARCH_COMMON_OBJ_REF                          *PciAddressMapRefs;
+  CM_ARCH_COMMON_PCI_ADDRESS_MAP_INFO             *PciAddressMaps;
+  UINT32                                          PciAddressMapCount;
   CM_X64_FADT_SCI_INTERRUPT                       FadtSciInterrupt;
   CM_X64_FADT_SCI_CMD_INFO                        FadtSciCmdInfo;
   CM_X64_FADT_PM_BLOCK_INFO                       FadtPmBlockInfo;
@@ -82,6 +88,13 @@ STATIC EDKII_PLATFORM_REPOSITORY_INFO  mScorpiAcpiRepository = {
       EFI_ACPI_6_5_PCI_EXPRESS_MEMORY_MAPPED_CONFIGURATION_SPACE_BASE_ADDRESS_DESCRIPTION_TABLE_SIGNATURE,
       EFI_ACPI_MEMORY_MAPPED_CONFIGURATION_SPACE_ACCESS_TABLE_REVISION,
       CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdMcfg),
+      NULL,
+      FALSE
+    },
+    {
+      EFI_ACPI_6_5_SECONDARY_SYSTEM_DESCRIPTION_TABLE_SIGNATURE,
+      0,
+      CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdSsdtPciExpress),
       NULL,
       FALSE
     }
@@ -153,6 +166,37 @@ ScorpiHandleObject (
 }
 
 STATIC
+VOID
+ScorpiFreeRepository (
+  IN OUT EDKII_PLATFORM_REPOSITORY_INFO  *Repo
+  )
+{
+  if (Repo->LocalApicInfo != NULL) {
+    FreePool (Repo->LocalApicInfo);
+    Repo->LocalApicInfo  = NULL;
+    Repo->LocalApicCount = 0;
+  }
+
+  if (Repo->MadtTable != NULL) {
+    FreePool (Repo->MadtTable);
+    Repo->MadtTable = NULL;
+  }
+
+  if (Repo->PciAddressMapRefs != NULL) {
+    FreePool (Repo->PciAddressMapRefs);
+    Repo->PciAddressMapRefs = NULL;
+  }
+
+  if (Repo->PciAddressMaps != NULL) {
+    FreePool (Repo->PciAddressMaps);
+    Repo->PciAddressMaps = NULL;
+  }
+
+  Repo->PciAddressMapCount             = 0;
+  Repo->PciConfigSpace.AddressMapToken = CM_NULL_TOKEN;
+}
+
+STATIC
 EFI_STATUS
 ScorpiBuildLocalApicInfo (
   IN CONST SCORPI_HWINFO              *HwInfo,
@@ -200,6 +244,104 @@ ScorpiBuildLocalApicInfo (
   Repo->LocalApicCount    = Count;
   Repo->MadtInfo.Flags    = 0;
   Repo->MadtInfo.ApicMode = UseX2Apic ? LocalApicModeX2Apic : LocalApicModeXApic;
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+ScorpiPciWindowSpaceCode (
+  IN  CONST SCORPI_X64_HWINFO_PCI_WINDOW  *Window,
+  OUT       UINT8                          *SpaceCode
+  )
+{
+  if ((Window->Size == 0) ||
+      (Window->CpuBase > MAX_UINT64 - Window->Size + 1) ||
+      (Window->PciBase > MAX_UINT64 - Window->Size + 1) ||
+      (Window->CpuBase < Window->PciBase))
+  {
+    return EFI_UNSUPPORTED;
+  }
+
+  switch (Window->WindowType) {
+    case SCORPI_X64_PCI_WINDOW_MMIO32:
+      if ((Window->PciBase > MAX_UINT32) ||
+          (Window->CpuBase > MAX_UINT32) ||
+          (Window->Size > MAX_UINT32) ||
+          (Window->PciBase + Window->Size - 1 > MAX_UINT32) ||
+          (Window->CpuBase + Window->Size - 1 > MAX_UINT32))
+      {
+        return EFI_UNSUPPORTED;
+      }
+
+      *SpaceCode = SCORPI_PCI_SPACE_M32;
+      return EFI_SUCCESS;
+
+    case SCORPI_X64_PCI_WINDOW_MMIO64:
+      *SpaceCode = SCORPI_PCI_SPACE_M64;
+      return EFI_SUCCESS;
+
+    default:
+      return EFI_UNSUPPORTED;
+  }
+}
+
+STATIC
+EFI_STATUS
+ScorpiBuildPciAddressMaps (
+  IN CONST SCORPI_HWINFO              *HwInfo,
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
+  )
+{
+  CONST SCORPI_X64_HWINFO_ENTRY       *Entry;
+  CONST SCORPI_X64_HWINFO_PCI_WINDOW  *Window;
+  UINT32                              Count;
+  UINT32                              Index;
+  UINT8                               SpaceCode;
+  EFI_STATUS                          Status;
+
+  Count = 0;
+  Entry = NULL;
+  while ((Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_PCI_WINDOW, Entry)) != NULL) {
+    Count++;
+  }
+
+  if (Count == 0) {
+    return EFI_NOT_FOUND;
+  }
+
+  Repo->PciAddressMaps = AllocateZeroPool (sizeof (*Repo->PciAddressMaps) * Count);
+  if (Repo->PciAddressMaps == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Repo->PciAddressMapRefs = AllocateZeroPool (sizeof (*Repo->PciAddressMapRefs) * Count);
+  if (Repo->PciAddressMapRefs == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Entry = NULL;
+  Index = 0;
+  while ((Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_PCI_WINDOW, Entry)) != NULL) {
+    Window = (CONST SCORPI_X64_HWINFO_PCI_WINDOW *)Entry;
+    Status = ScorpiPciWindowSpaceCode (Window, &SpaceCode);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    Repo->PciAddressMaps[Index].SpaceCode   = SpaceCode;
+    Repo->PciAddressMaps[Index].PciAddress  = Window->PciBase;
+    Repo->PciAddressMaps[Index].CpuAddress  = Window->CpuBase;
+    Repo->PciAddressMaps[Index].AddressSize = Window->Size;
+
+    Repo->PciAddressMapRefs[Index].ReferenceToken =
+      (CM_OBJECT_TOKEN)&Repo->PciAddressMaps[Index];
+
+    Index++;
+  }
+
+  Repo->PciAddressMapCount             = Count;
+  Repo->PciConfigSpace.AddressMapToken = (CM_OBJECT_TOKEN)Repo->PciAddressMapRefs;
 
   return EFI_SUCCESS;
 }
@@ -336,6 +478,11 @@ ScorpiLoadHwInfo (
   Repo->PciConfigSpace.AddressMapToken       = CM_NULL_TOKEN;
   Repo->PciConfigSpace.InterruptMapToken     = CM_NULL_TOKEN;
 
+  Status = ScorpiBuildPciAddressMaps (&HwInfo, Repo);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
   Entry = ScorpiHwInfoFind (&HwInfo, SCORPI_X64_ENTRY_RESET, NULL);
   if (Entry == NULL) {
     Status = EFI_NOT_FOUND;
@@ -402,6 +549,7 @@ ScorpiGetArchCommonObject (
   )
 {
   EDKII_PLATFORM_REPOSITORY_INFO  *Repo;
+  UINT32                          Index;
 
   Repo = This->PlatRepoInfo;
   switch (GET_CM_OBJECT_ID (CmObjectId)) {
@@ -409,8 +557,44 @@ ScorpiGetArchCommonObject (
       return ScorpiHandleObject (CmObjectId, &Repo->PowerProfile, sizeof (Repo->PowerProfile), 1, CmObject);
     case EArchCommonObjFixedFeatureFlags:
       return ScorpiHandleObject (CmObjectId, &Repo->FixedFeatureFlags, sizeof (Repo->FixedFeatureFlags), 1, CmObject);
+    case EArchCommonObjCmRef:
+      if (Token == (CM_OBJECT_TOKEN)Repo->PciAddressMapRefs) {
+        return ScorpiHandleObject (
+                 CmObjectId,
+                 Repo->PciAddressMapRefs,
+                 sizeof (*Repo->PciAddressMapRefs) * Repo->PciAddressMapCount,
+                 Repo->PciAddressMapCount,
+                 CmObject
+                 );
+      }
+
+      return EFI_NOT_FOUND;
     case EArchCommonObjPciConfigSpaceInfo:
       return ScorpiHandleObject (CmObjectId, &Repo->PciConfigSpace, sizeof (Repo->PciConfigSpace), 1, CmObject);
+    case EArchCommonObjPciAddressMapInfo:
+      if (Token == CM_NULL_TOKEN) {
+        return ScorpiHandleObject (
+                 CmObjectId,
+                 Repo->PciAddressMaps,
+                 sizeof (*Repo->PciAddressMaps) * Repo->PciAddressMapCount,
+                 Repo->PciAddressMapCount,
+                 CmObject
+                 );
+      }
+
+      for (Index = 0; Index < Repo->PciAddressMapCount; Index++) {
+        if (Token == (CM_OBJECT_TOKEN)&Repo->PciAddressMaps[Index]) {
+          return ScorpiHandleObject (
+                   CmObjectId,
+                   &Repo->PciAddressMaps[Index],
+                   sizeof (Repo->PciAddressMaps[Index]),
+                   1,
+                   CmObject
+                   );
+        }
+      }
+
+      return EFI_NOT_FOUND;
     default:
       return EFI_NOT_FOUND;
   }
@@ -522,6 +706,7 @@ ScorpiAcpiDxeInitialize (
   Status = ScorpiLoadHwInfo (&mScorpiAcpiRepository);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "%a: ScorpiLoadHwInfo: %r\n", __func__, Status));
+    ScorpiFreeRepository (&mScorpiAcpiRepository);
     return Status;
   }
 
@@ -533,6 +718,7 @@ ScorpiAcpiDxeInitialize (
                   );
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "%a: InstallProtocolInterface: %r\n", __func__, Status));
+    ScorpiFreeRepository (&mScorpiAcpiRepository);
   }
 
   return Status;
@@ -544,15 +730,6 @@ ScorpiAcpiDxeUnloadImage (
   IN EFI_HANDLE  ImageHandle
   )
 {
-  if (mScorpiAcpiRepository.LocalApicInfo != NULL) {
-    FreePool (mScorpiAcpiRepository.LocalApicInfo);
-    mScorpiAcpiRepository.LocalApicInfo = NULL;
-  }
-
-  if (mScorpiAcpiRepository.MadtTable != NULL) {
-    FreePool (mScorpiAcpiRepository.MadtTable);
-    mScorpiAcpiRepository.MadtTable = NULL;
-  }
-
+  ScorpiFreeRepository (&mScorpiAcpiRepository);
   return EFI_SUCCESS;
 }
