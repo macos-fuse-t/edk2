@@ -14,6 +14,15 @@ DefinitionBlock ("Dsdt.aml", "DSDT", 2, "SCORPI", "SCORPIX", 0x00000001)
 
     Scope (_SB)
     {
+        Device (RTC)
+        {
+            Name (_HID, EisaId ("PNP0B00"))
+            Name (_CRS, ResourceTemplate ()
+            {
+                IO (Decode16, 0x0070, 0x0070, 0x01, 0x02)
+            })
+        }
+
         Device (TPM0)
         {
             Name (_HID, "MSFT0101")
