@@ -620,9 +620,9 @@
   gEfiMdePkgTokenSpaceGuid.PcdFSBClock|1000000000
   gEfiMdePkgTokenSpaceGuid.PcdPlatformBootTimeOut|0
 
-  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosVersion|0x0208
+  gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosVersion|0x0300
   gEfiMdeModulePkgTokenSpaceGuid.PcdSmbiosDocRev|0x0
-  gUefiOvmfPkgTokenSpaceGuid.PcdQemuSmbiosValidated|FALSE
+  gUefiOvmfPkgTokenSpaceGuid.PcdQemuSmbiosValidated|TRUE
 
   # Noexec settings for DXE.
   gEfiMdeModulePkgTokenSpaceGuid.PcdSetNxForStack|FALSE
