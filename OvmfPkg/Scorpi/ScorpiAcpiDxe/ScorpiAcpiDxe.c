@@ -779,6 +779,16 @@ ScorpiLoadHwInfo (
   Repo->FadtResetBlockInfo.ResetReg.AccessSize         = EFI_ACPI_6_5_BYTE;
   Repo->FadtResetBlockInfo.ResetReg.Address            = Reset->Base + Reset->ResetOffset;
   Repo->FadtResetBlockInfo.ResetValue                  = (UINT8)Reset->ResetValue;
+  Repo->FadtSleepBlockInfo.SleepControlReg.AddressSpaceId   = EFI_ACPI_6_5_SYSTEM_MEMORY;
+  Repo->FadtSleepBlockInfo.SleepControlReg.RegisterBitWidth  = 8;
+  Repo->FadtSleepBlockInfo.SleepControlReg.RegisterBitOffset = 0;
+  Repo->FadtSleepBlockInfo.SleepControlReg.AccessSize        = EFI_ACPI_6_5_BYTE;
+  Repo->FadtSleepBlockInfo.SleepControlReg.Address           = Reset->Base + Reset->ShutdownOffset;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.AddressSpaceId     = EFI_ACPI_6_5_SYSTEM_MEMORY;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.RegisterBitWidth   = 8;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.RegisterBitOffset  = 0;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.AccessSize         = EFI_ACPI_6_5_BYTE;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.Address            = Reset->Base + Reset->ShutdownOffset + 1;
 
   Status = ScorpiBuildLocalApicInfo (&HwInfo, Repo);
   if (EFI_ERROR (Status)) {
