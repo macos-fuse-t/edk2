@@ -392,10 +392,6 @@ ScorpiReserveEmuVariableNvStore (
   VariableStore = (EFI_PHYSICAL_ADDRESS)(UINTN)PlatformReserveEmuVariableNvStore ();
   PcdStatus     = PcdSet64S (PcdEmuVariableNvStoreReserved, VariableStore);
 
-  if (FeaturePcdGet (PcdSecureBootSupported)) {
-    PlatformInitEmuVariableNvStore ((VOID *)(UINTN)VariableStore);
-  }
-
   ASSERT_RETURN_ERROR (PcdStatus);
 }
 

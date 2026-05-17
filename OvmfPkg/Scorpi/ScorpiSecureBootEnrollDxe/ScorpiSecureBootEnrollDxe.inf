@@ -1,0 +1,42 @@
+## @file
+#  Enroll Scorpi default Secure Boot keys on a blank variable store.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+##
+
+[Defines]
+  INF_VERSION                    = 1.28
+  BASE_NAME                      = ScorpiSecureBootEnrollDxe
+  FILE_GUID                      = 3DB8A007-570E-4B15-8D9C-C3DD09214EBA
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ScorpiSecureBootEnrollEntryPoint
+
+[Sources]
+  ScorpiSecureBootEnrollDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
+  SecurityPkg/SecurityPkg.dec
+
+[LibraryClasses]
+  BaseMemoryLib
+  DebugLib
+  MemoryAllocationLib
+  QemuFwCfgLib
+  SecureBootVariableLib
+  SecureBootVariableProvisionLib
+  UefiDriverEntryPoint
+  UefiLib
+  UefiRuntimeServicesTableLib
+
+[Guids]
+  gEfiCertSha256Guid
+  gEfiCustomModeEnableGuid
+  gEfiGlobalVariableGuid
+
+[Depex]
+  gEfiVariableArchProtocolGuid AND
+  gEfiVariableWriteArchProtocolGuid
