@@ -25,5 +25,7 @@
 [LibraryClasses]
   BaseLib
   DebugLib
+  DxeServicesTableLib
   IoLib
   ScorpiHwInfoLib
+  UefiRuntimeLib
