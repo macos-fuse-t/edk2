@@ -14,12 +14,14 @@
 #include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
 #include <IndustryStandard/ScorpiX64HwInfo.h>
 #include <IndustryStandard/ScorpiX64Platform.h>
+#include <IndustryStandard/Tpm2Acpi.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/PcdLib.h>
 #include <Library/ScorpiHwInfoLib.h>
+#include <Library/Tpm2DeviceLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/PciIo.h>
 #include <Protocol/ConfigurationManagerProtocol.h>
@@ -33,7 +35,7 @@ extern CHAR8  dsdt_aml_code[];
 #define SCORPI_CREATOR_ID        SIGNATURE_32 ('S', 'C', 'P', 'I')
 
 #define SCORPI_ACPI_BASE_TABLE_COUNT  5
-#define SCORPI_ACPI_TABLE_COUNT       6
+#define SCORPI_ACPI_TABLE_COUNT       7
 
 #define SCORPI_PCI_UART_BAR  0
 
@@ -45,6 +47,9 @@ extern CHAR8  dsdt_aml_code[];
 
 #define SCORPI_PCI_SPACE_M32  2
 #define SCORPI_PCI_SPACE_M64  3
+
+#define SCORPI_DSDT_TPM_BASE_PLACEHOLDER  0x54504D30
+#define SCORPI_DSDT_TPM_SIZE_PLACEHOLDER  0x54504D31
 
 typedef struct {
   UINT64    Base;
@@ -83,8 +88,11 @@ typedef struct PlatformRepositoryInfo {
   CM_X64_IO_APIC_INFO                             IoApicInfo;
   CM_X64_LOCAL_APIC_X2APIC_INFO                  *LocalApicInfo;
   UINT32                                         LocalApicCount;
+  CM_ARCH_COMMON_TPM2_INTERFACE_INFO             Tpm2Info;
+  BOOLEAN                                        HasTpm2;
   EFI_ACPI_6_5_MULTIPLE_APIC_DESCRIPTION_TABLE_HEADER
                                                  *MadtTable;
+  EFI_ACPI_DESCRIPTION_HEADER                    *DsdtTable;
   EFI_ACPI_SERIAL_PORT_CONSOLE_REDIRECTION_TABLE *SpcrTable;
 } EDKII_PLATFORM_REPOSITORY_INFO;
 
@@ -179,6 +187,80 @@ ScorpiAcpiHeader (
 
 STATIC
 EFI_STATUS
+ScorpiPatchDsdtSta (
+  IN OUT EFI_ACPI_DESCRIPTION_HEADER  *Dsdt
+  )
+{
+  CONST UINT8  StaPattern[] = { 0x08, 'T', 'S', 'T', 'A', 0x11 };
+  UINT8        *Data;
+  UINT32       Index;
+  UINT32       Offset;
+  UINT32       PatchCount;
+
+  Data       = (UINT8 *)Dsdt;
+  PatchCount = 0;
+
+  for (Index = 0; Index + sizeof (StaPattern) <= Dsdt->Length; Index++) {
+    if (CompareMem (&Data[Index], StaPattern, sizeof (StaPattern)) == 0) {
+      for (Offset = sizeof (StaPattern); (Offset < 16) && (Index + Offset < Dsdt->Length); Offset++) {
+        if (Data[Index + Offset] == 0) {
+          Data[Index + Offset] = 0x0F;
+          PatchCount++;
+          break;
+        }
+      }
+    }
+  }
+
+  if (PatchCount != 1) {
+    DEBUG ((DEBUG_ERROR, "%a: found %u TPM _STA patch sites\n", __func__, PatchCount));
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+ScorpiPatchDsdtUint32 (
+  IN OUT EFI_ACPI_DESCRIPTION_HEADER  *Dsdt,
+  IN     UINT32                       OldValue,
+  IN     UINT32                       NewValue
+  )
+{
+  UINT8   OldBytes[sizeof (UINT32)];
+  UINT8   *Data;
+  UINT32  Index;
+  UINT32  PatchCount;
+
+  OldBytes[0] = (UINT8)OldValue;
+  OldBytes[1] = (UINT8)(OldValue >> 8);
+  OldBytes[2] = (UINT8)(OldValue >> 16);
+  OldBytes[3] = (UINT8)(OldValue >> 24);
+
+  Data       = (UINT8 *)Dsdt;
+  PatchCount = 0;
+
+  for (Index = 0; Index + sizeof (OldBytes) <= Dsdt->Length; Index++) {
+    if (CompareMem (&Data[Index], OldBytes, sizeof (OldBytes)) == 0) {
+      Data[Index]     = (UINT8)NewValue;
+      Data[Index + 1] = (UINT8)(NewValue >> 8);
+      Data[Index + 2] = (UINT8)(NewValue >> 16);
+      Data[Index + 3] = (UINT8)(NewValue >> 24);
+      PatchCount++;
+    }
+  }
+
+  if (PatchCount != 1) {
+    DEBUG ((DEBUG_ERROR, "%a: found %u patch sites for 0x%08x\n", __func__, PatchCount, OldValue));
+    return EFI_NOT_FOUND;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
 ScorpiHandleObject (
   IN  CONST CM_OBJECT_ID          CmObjectId,
   IN        VOID                  *Object,
@@ -212,6 +294,11 @@ ScorpiFreeRepository (
     Repo->MadtTable = NULL;
   }
 
+  if (Repo->DsdtTable != NULL) {
+    FreePool (Repo->DsdtTable);
+    Repo->DsdtTable = NULL;
+  }
+
   if (Repo->SpcrTable != NULL) {
     FreePool (Repo->SpcrTable);
     Repo->SpcrTable = NULL;
@@ -229,6 +316,9 @@ ScorpiFreeRepository (
 
   Repo->PciAddressMapCount             = 0;
   Repo->PciConfigSpace.AddressMapToken = CM_NULL_TOKEN;
+  ZeroMem (&Repo->Tpm2Info, sizeof (Repo->Tpm2Info));
+  Repo->HasTpm2                        = FALSE;
+  Repo->AcpiTables[2].AcpiTableData    = (EFI_ACPI_DESCRIPTION_HEADER *)dsdt_aml_code;
   Repo->AcpiTableCount                 = SCORPI_ACPI_BASE_TABLE_COUNT;
 }
 
@@ -708,6 +798,120 @@ ScorpiBuildSpcrTable (
 
 STATIC
 EFI_STATUS
+ScorpiBuildTpm2 (
+  IN CONST SCORPI_HWINFO              *HwInfo,
+  IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
+  )
+{
+  CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
+  CONST SCORPI_X64_HWINFO_TPM    *Tpm;
+  EFI_ACPI_DESCRIPTION_HEADER    *Dsdt;
+  EFI_ACPI_DESCRIPTION_HEADER    *DsdtTemplate;
+  CM_STD_OBJ_ACPI_TABLE_INFO     *TableInfo;
+  EFI_STATUS                     Status;
+
+  Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_TPM, NULL);
+  if (Entry == NULL) {
+    return EFI_SUCCESS;
+  }
+
+  Tpm = (CONST SCORPI_X64_HWINFO_TPM *)Entry;
+  if ((Tpm->Base == 0) || (Tpm->Size == 0) ||
+      (Tpm->Base > MAX_UINT32) || (Tpm->Size > MAX_UINT32))
+  {
+    DEBUG ((DEBUG_ERROR, "%a: unsupported TPM base 0x%Lx size 0x%x\n", __func__, Tpm->Base, Tpm->Size));
+    return EFI_UNSUPPORTED;
+  }
+
+  ZeroMem (&Repo->Tpm2Info, sizeof (Repo->Tpm2Info));
+  Repo->Tpm2Info.PlatformClass             = 0;
+  Repo->Tpm2Info.StartMethodParametersSize = 0;
+  Repo->Tpm2Info.Laml                      = PcdGet32 (PcdTpm2AcpiTableLaml);
+  Repo->Tpm2Info.Lasa                      = PcdGet64 (PcdTpm2AcpiTableLasa);
+
+  switch (Tpm->InterfaceType) {
+    case SCORPI_X64_TPM_INTERFACE_CRB:
+      Repo->Tpm2Info.AddressOfControlArea = Tpm->Base + 0x40;
+      Repo->Tpm2Info.StartMethod          =
+        EFI_TPM2_ACPI_TABLE_START_METHOD_COMMAND_RESPONSE_BUFFER_INTERFACE;
+      break;
+    case SCORPI_X64_TPM_INTERFACE_TIS:
+      Repo->Tpm2Info.AddressOfControlArea = 0;
+      Repo->Tpm2Info.StartMethod          = EFI_TPM2_ACPI_TABLE_START_METHOD_TIS;
+      break;
+    default:
+      DEBUG ((DEBUG_ERROR, "%a: unsupported TPM interface %u\n", __func__, Tpm->InterfaceType));
+      return EFI_UNSUPPORTED;
+  }
+
+  if ((Repo->Tpm2Info.Laml == 0) || (Repo->Tpm2Info.Lasa == 0)) {
+    Repo->Tpm2Info.Laml = 0;
+    Repo->Tpm2Info.Lasa = 0;
+  }
+
+  DsdtTemplate = (EFI_ACPI_DESCRIPTION_HEADER *)dsdt_aml_code;
+  Dsdt         = AllocateCopyPool (DsdtTemplate->Length, DsdtTemplate);
+  if (Dsdt == NULL) {
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  Status = ScorpiPatchDsdtSta (Dsdt);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
+  Status = ScorpiPatchDsdtUint32 (Dsdt, SCORPI_DSDT_TPM_BASE_PLACEHOLDER, (UINT32)Tpm->Base);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
+  Status = ScorpiPatchDsdtUint32 (Dsdt, SCORPI_DSDT_TPM_SIZE_PLACEHOLDER, Tpm->Size);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
+  ScorpiAcpiChecksum (Dsdt);
+  Repo->DsdtTable                  = Dsdt;
+  Repo->AcpiTables[2].AcpiTableData = Dsdt;
+  Dsdt                             = NULL;
+
+  if (Repo->AcpiTableCount >= ARRAY_SIZE (Repo->AcpiTables)) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Exit;
+  }
+
+  TableInfo                     = &Repo->AcpiTables[Repo->AcpiTableCount];
+  TableInfo->AcpiTableSignature =
+    EFI_ACPI_6_5_TRUSTED_COMPUTING_PLATFORM_2_TABLE_SIGNATURE;
+  TableInfo->AcpiTableRevision = EFI_TPM2_ACPI_TABLE_REVISION_4;
+  TableInfo->TableGeneratorId  = CREATE_STD_ACPI_TABLE_GEN_ID (EStdAcpiTableIdTpm2);
+  TableInfo->AcpiTableData     = NULL;
+  TableInfo->SkipOnError       = FALSE;
+  Repo->AcpiTableCount++;
+  Repo->HasTpm2 = TRUE;
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: TPM2 base=0x%Lx size=0x%x start=0x%x control=0x%Lx LAML=0x%x LASA=0x%Lx\n",
+    __func__,
+    Tpm->Base,
+    Tpm->Size,
+    Repo->Tpm2Info.StartMethod,
+    Repo->Tpm2Info.AddressOfControlArea,
+    Repo->Tpm2Info.Laml,
+    Repo->Tpm2Info.Lasa
+    ));
+
+Exit:
+  if (Dsdt != NULL) {
+    FreePool (Dsdt);
+  }
+
+  return Status;
+}
+
+STATIC
+EFI_STATUS
 ScorpiLoadHwInfo (
   IN EDKII_PLATFORM_REPOSITORY_INFO  *Repo
   )
@@ -796,6 +1000,11 @@ ScorpiLoadHwInfo (
     goto Exit;
   }
 
+  Status = ScorpiBuildTpm2 (&HwInfo, Repo);
+  if (EFI_ERROR (Status)) {
+    goto Exit;
+  }
+
   Status = ScorpiBuildSpcrTable (Repo);
   if (EFI_ERROR (Status) && (Status != EFI_NOT_FOUND)) {
     goto Exit;
@@ -853,6 +1062,12 @@ ScorpiGetArchCommonObject (
       return ScorpiHandleObject (CmObjectId, &Repo->PowerProfile, sizeof (Repo->PowerProfile), 1, CmObject);
     case EArchCommonObjFixedFeatureFlags:
       return ScorpiHandleObject (CmObjectId, &Repo->FixedFeatureFlags, sizeof (Repo->FixedFeatureFlags), 1, CmObject);
+    case EArchCommonObjTpm2InterfaceInfo:
+      if (!Repo->HasTpm2) {
+        return EFI_NOT_FOUND;
+      }
+
+      return ScorpiHandleObject (CmObjectId, &Repo->Tpm2Info, sizeof (Repo->Tpm2Info), 1, CmObject);
     case EArchCommonObjCmRef:
       if (Token == (CM_OBJECT_TOKEN)Repo->PciAddressMapRefs) {
         return ScorpiHandleObject (

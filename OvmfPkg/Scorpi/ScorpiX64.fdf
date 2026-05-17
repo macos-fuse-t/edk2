@@ -171,7 +171,11 @@ INF  OvmfPkg/SmmAccess/SmmAccessPei.inf
 !endif
 INF  UefiCpuPkg/CpuMpPei/CpuMpPei.inf
 
-!include OvmfPkg/Include/Fdf/OvmfTpmPei.fdf.inc
+!if $(TPM2_ENABLE) == TRUE
+INF  OvmfPkg/Tcg/Tcg2Config/Tcg2ConfigPei.inf
+INF  SecurityPkg/Tcg/Tcg2Pei/Tcg2Pei.inf
+INF  SecurityPkg/Tcg/Tcg2PlatformPei/Tcg2PlatformPei.inf
+!endif
 
 ################################################################################
 

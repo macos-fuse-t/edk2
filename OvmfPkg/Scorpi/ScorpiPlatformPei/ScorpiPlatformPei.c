@@ -11,6 +11,7 @@
 #include <Guid/MemoryTypeInformation.h>
 #include <IndustryStandard/ScorpiX64HwInfo.h>
 #include <IndustryStandard/ScorpiX64Platform.h>
+#include <Guid/TpmInstance.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -21,6 +22,7 @@
 #include <Library/PlatformInitLib.h>
 #include <Library/ResourcePublicationLib.h>
 #include <Library/ScorpiHwInfoLib.h>
+#include <Library/Tpm2DeviceLib.h>
 #include <Ppi/MasterBootMode.h>
 
 #define SCORPI_PCI_IO_BASE    0xC000
@@ -38,6 +40,8 @@ STATIC EFI_MEMORY_TYPE_INFORMATION  mMemoryTypeInformation[] = {
   MEMORY_TYPE_INFO_DEFAULT (EfiRuntimeServicesData),
   { EfiMaxMemoryType, 0 }
 };
+
+STATIC EFI_GUID  mTpm2DtpmGuid = TPM_DEVICE_INTERFACE_TPM20_DTPM;
 
 STATIC EFI_PEI_PPI_DESCRIPTOR  mPpiBootMode[] = {
   {
@@ -332,6 +336,69 @@ ScorpiInitializePci (
 
 STATIC
 VOID
+ScorpiInitializeTpm (
+  IN CONST SCORPI_HWINFO  *HwInfo
+  )
+{
+  CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
+  CONST SCORPI_X64_HWINFO_TPM    *Tpm;
+  RETURN_STATUS                  Status;
+  UINTN                          TpmInstanceGuidSize;
+  UINT8                          TpmInterfaceType;
+
+  Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_TPM, NULL);
+  if (Entry == NULL) {
+    return;
+  }
+
+  Tpm = (CONST SCORPI_X64_HWINFO_TPM *)Entry;
+  if ((Tpm->Base == 0) || (Tpm->Size == 0)) {
+    DEBUG ((DEBUG_WARN, "%a: invalid TPM base 0x%Lx size 0x%x\n", __func__, Tpm->Base, Tpm->Size));
+    return;
+  }
+
+  switch (Tpm->InterfaceType) {
+    case SCORPI_X64_TPM_INTERFACE_CRB:
+      TpmInterfaceType = Tpm2PtpInterfaceCrb;
+      break;
+    case SCORPI_X64_TPM_INTERFACE_TIS:
+      TpmInterfaceType = Tpm2PtpInterfaceTis;
+      break;
+    default:
+      DEBUG ((DEBUG_WARN, "%a: unsupported TPM interface %u\n", __func__, Tpm->InterfaceType));
+      return;
+  }
+
+  DEBUG ((
+    DEBUG_INFO,
+    "%a: TPM @ 0x%Lx size 0x%x interface %a\n",
+    __func__,
+    Tpm->Base,
+    Tpm->Size,
+    (TpmInterfaceType == Tpm2PtpInterfaceCrb) ? "CRB" : "TIS"
+    ));
+
+  PlatformAddIoMemoryBaseSizeHob (Tpm->Base, Tpm->Size);
+
+  Status = PcdSet64S (PcdTpmBaseAddress, Tpm->Base);
+  ASSERT_RETURN_ERROR (Status);
+
+  Status = PcdSet8S (PcdActiveTpmInterfaceType, TpmInterfaceType);
+  ASSERT_RETURN_ERROR (Status);
+
+  Status = PcdSet8S (
+             PcdCRBIdleByPass,
+             (TpmInterfaceType == Tpm2PtpInterfaceCrb) ? 0 : 0xFF
+             );
+  ASSERT_RETURN_ERROR (Status);
+
+  TpmInstanceGuidSize = sizeof (mTpm2DtpmGuid);
+  Status = PcdSetPtrS (PcdTpmInstanceGuid, &TpmInstanceGuidSize, &mTpm2DtpmGuid);
+  ASSERT_RETURN_ERROR (Status);
+}
+
+STATIC
+VOID
 ScorpiInitializeReset (
   VOID
   )
@@ -437,6 +504,7 @@ ScorpiPlatformPeiEntry (
   ScorpiInitializeMemory (&HwInfo, PlatformInfoHob);
   ScorpiInitializeCpus (&HwInfo, PlatformInfoHob);
   ScorpiInitializeApic (&HwInfo);
+  ScorpiInitializeTpm (&HwInfo);
   BuildCpuHob (PlatformInfoHob->PhysMemAddressWidth, 16);
 
   ScorpiPublishPeiMemory (PlatformInfoHob);

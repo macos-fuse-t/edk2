@@ -33,7 +33,8 @@
   DEFINE SMM_REQUIRE             = FALSE
   DEFINE SOURCE_DEBUG_ENABLE     = FALSE
 
-!include OvmfPkg/Include/Dsc/OvmfTpmDefines.dsc.inc
+  DEFINE TPM2_ENABLE             = TRUE
+  DEFINE TPM1_ENABLE             = FALSE
 
   #
   # Network definition
@@ -650,6 +651,16 @@
   gEfiSecurityPkgTokenSpaceGuid.PcdOptionRomImageVerificationPolicy|0x00
 
 !include OvmfPkg/Include/Dsc/OvmfTpmPcds.dsc.inc
+!if $(TPM2_ENABLE) == TRUE
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpmBaseAddress|0x0
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2HashMask|0x0000000F
+  # Revision 4 adds LAML/LASA and makes Tcg2Dxe allocate the event log
+  # as EfiACPIMemoryNVS instead of boot-services memory.
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLaml|0
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableLasa|0
+  gEfiSecurityPkgTokenSpaceGuid.PcdActiveTpmInterfaceType|0xFF
+  gEfiSecurityPkgTokenSpaceGuid.PcdCRBIdleByPass|0xFF
+!endif
 
 !include NetworkPkg/NetworkDynamicPcds.dsc.inc
 
@@ -657,7 +668,10 @@
   gEfiMdePkgTokenSpaceGuid.PcdConfidentialComputingGuestAttr|0
 
 [PcdsDynamicHii]
-!include OvmfPkg/Include/Dsc/OvmfTpmPcdsHii.dsc.inc
+!if $(TPM2_ENABLE) == TRUE
+  gEfiSecurityPkgTokenSpaceGuid.PcdTcgPhysicalPresenceInterfaceVer|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x0|"1.3"|NV,BS
+  gEfiSecurityPkgTokenSpaceGuid.PcdTpm2AcpiTableRev|L"TCG2_VERSION"|gTcg2ConfigFormSetGuid|0x8|4|NV,BS
+!endif
 
 ################################################################################
 #
@@ -708,7 +722,22 @@
 !endif
   UefiCpuPkg/CpuMpPei/CpuMpPei.inf
 
-!include OvmfPkg/Include/Dsc/OvmfTpmComponentsPei.dsc.inc
+!if $(TPM2_ENABLE) == TRUE
+  OvmfPkg/Tcg/Tcg2Config/Tcg2ConfigPei.inf
+  SecurityPkg/Tcg/Tcg2Pei/Tcg2Pei.inf {
+    <LibraryClasses>
+      HashLib|SecurityPkg/Library/HashLibBaseCryptoRouter/HashLibBaseCryptoRouterPei.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha1/HashInstanceLibSha1.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha256/HashInstanceLibSha256.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha384/HashInstanceLibSha384.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSha512/HashInstanceLibSha512.inf
+      NULL|SecurityPkg/Library/HashInstanceLibSm3/HashInstanceLibSm3.inf
+  }
+  SecurityPkg/Tcg/Tcg2PlatformPei/Tcg2PlatformPei.inf {
+    <LibraryClasses>
+      TpmPlatformHierarchyLib|SecurityPkg/Library/PeiDxeTpmPlatformHierarchyLib/PeiDxeTpmPlatformHierarchyLib.inf
+  }
+!endif
 
   #
   # DXE Phase modules
@@ -860,6 +889,9 @@
       NULL|DynamicTablesPkg/Library/Acpi/Common/AcpiMcfgLib/AcpiMcfgLib.inf
       NULL|DynamicTablesPkg/Library/Acpi/Common/AcpiRawLib/AcpiRawLib.inf
       NULL|DynamicTablesPkg/Library/Acpi/Common/AcpiSsdtPcieLib/SsdtPcieLib.inf
+!if $(TPM2_ENABLE) == TRUE
+      NULL|DynamicTablesPkg/Library/Acpi/Common/AcpiTpm2Lib/AcpiTpm2Lib.inf
+!endif
   }
   OvmfPkg/Scorpi/ScorpiAcpiDxe/ScorpiAcpiDxe.inf
   DynamicTablesPkg/Drivers/DynamicTableManagerDxe/DynamicTableManagerDxe.inf
