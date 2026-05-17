@@ -10,6 +10,7 @@
 #include <Guid/RootBridgesConnectedEventGroup.h>
 #include <Guid/SerialPortLibVendor.h>
 #include <Protocol/FirmwareVolume2.h>
+#include <Protocol/GraphicsOutput.h>
 #include <Protocol/VirtioDevice.h>
 #include <Library/PlatformBmPrintScLib.h>
 #include <Library/Tcg2PhysicalPresenceLib.h>
@@ -440,6 +441,15 @@ STATIC
 EFI_STATUS
 EFIAPI
 ConnectVirtioPciRng (
+  IN EFI_HANDLE  Handle,
+  IN VOID        *Instance,
+  IN VOID        *Context
+  );
+
+STATIC
+EFI_STATUS
+EFIAPI
+AddGraphicsOutputConsole (
   IN EFI_HANDLE  Handle,
   IN VOID        *Instance,
   IN VOID        *Context
@@ -1027,6 +1037,34 @@ PreparePciDisplayDevicePath (
   return EFI_SUCCESS;
 }
 
+STATIC
+EFI_STATUS
+EFIAPI
+AddGraphicsOutputConsole (
+  IN EFI_HANDLE  Handle,
+  IN VOID        *Instance,
+  IN VOID        *Context
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL  *DevicePath;
+  EFI_STATUS                Status;
+
+  (VOID)Instance;
+  (VOID)Context;
+
+  DevicePath = DevicePathFromHandle (Handle);
+  if (DevicePath == NULL) {
+    return EFI_NOT_FOUND;
+  }
+
+  Status = EfiBootManagerUpdateConsoleVariable (ConOut, DevicePath, NULL);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  return EfiBootManagerUpdateConsoleVariable (ErrOut, DevicePath, NULL);
+}
+
 /**
   Add PCI Serial to ConOut, ConIn, ErrOut.
 
@@ -1365,6 +1403,12 @@ PlatformInitializeConsole (
   VisitAllInstancesOfProtocol (
     &gVirtioDeviceProtocolGuid,
     DetectAndPreparePlatformVirtioDevicePath,
+    NULL
+    );
+
+  VisitAllInstancesOfProtocol (
+    &gEfiGraphicsOutputProtocolGuid,
+    AddGraphicsOutputConsole,
     NULL
     );
 
