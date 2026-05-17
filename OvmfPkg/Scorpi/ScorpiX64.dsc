@@ -779,6 +779,11 @@
   OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
   OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
   OvmfPkg/VirtioSerialDxe/VirtioSerial.inf
+  OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf {
+    <LibraryClasses>
+      BltLib|MdeModulePkg/Library/FrameBufferBltLib/FrameBufferBltLib.inf
+      PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
+  }
   OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
   OvmfPkg/VirtioRngDxe/VirtioRng.inf
 

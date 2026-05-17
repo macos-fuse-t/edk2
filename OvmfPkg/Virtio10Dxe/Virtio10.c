@@ -1036,7 +1036,8 @@ Virtio10BindingSupported (
     // Both virtio-vga and virtio-gpu-pci have DeviceId 0x1050, but only the
     // former has device class PCI_CLASS_DISPLAY_VGA.
     //
-    if ((Pci.Hdr.DeviceId != 0x1050) || !IS_PCI_VGA (&Pci)) {
+    if (((Pci.Hdr.DeviceId != 0x1050) || !IS_PCI_VGA (&Pci)) &&
+        (Pci.Device.SubsystemID != 0x4690)) {
       Status = EFI_SUCCESS;
     }
   }

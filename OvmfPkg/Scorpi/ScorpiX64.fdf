@@ -232,6 +232,7 @@ INF  OvmfPkg/Virtio10Dxe/Virtio10.inf
 INF  OvmfPkg/VirtioBlkDxe/VirtioBlk.inf
 INF  OvmfPkg/VirtioScsiDxe/VirtioScsi.inf
 INF  OvmfPkg/VirtioSerialDxe/VirtioSerial.inf
+INF  OvmfPkg/Scorpi/ScorpiRfbDxe/ScorpiRfbDxe.inf
 INF  OvmfPkg/VirtioGpuDxe/VirtioGpu.inf
 INF  OvmfPkg/VirtioRngDxe/VirtioRng.inf
 INF  MdeModulePkg/Bus/Pci/XhciDxe/XhciDxe.inf
