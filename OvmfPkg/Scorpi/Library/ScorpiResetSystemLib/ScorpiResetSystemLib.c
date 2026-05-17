@@ -16,6 +16,7 @@
 #include <Library/IoLib.h>
 #include <Library/ResetSystemLib.h>
 #include <Library/ScorpiHwInfoLib.h>
+#include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeLib.h>
 
 #define SCORPI_RESET_BASE            0xF0000000ULL
@@ -31,6 +32,17 @@ STATIC UINT32  mResetOffset    = SCORPI_RESET_OFFSET;
 STATIC UINT32  mShutdownOffset = SCORPI_SHUTDOWN_OFFSET;
 STATIC UINT32  mResetValue     = SCORPI_RESET_VALUE;
 STATIC UINT32  mShutdownValue  = SCORPI_SHUTDOWN_VALUE;
+
+STATIC
+VOID
+EFIAPI
+ScorpiResetAddressChangeEvent (
+  IN EFI_EVENT  Event,
+  IN VOID       *Context
+  )
+{
+  EfiConvertPointer (0, (VOID **)&mResetBase);
+}
 
 STATIC
 EFI_STATUS
@@ -70,6 +82,7 @@ ScorpiResetSystemLibConstructor (
   CONST SCORPI_X64_HWINFO_RESET  *Reset;
   SCORPI_HWINFO                  HwInfo;
   RETURN_STATUS                  Status;
+  EFI_EVENT                      Event;
 
   Status = ScorpiHwInfoRead (&HwInfo);
   if (RETURN_ERROR (Status)) {
@@ -90,6 +103,18 @@ ScorpiResetSystemLibConstructor (
 
   ScorpiHwInfoRelease (&HwInfo);
   ScorpiResetMarkRuntime ();
+
+  Status = gBS->CreateEvent (
+                  EVT_SIGNAL_VIRTUAL_ADDRESS_CHANGE,
+                  TPL_NOTIFY,
+                  ScorpiResetAddressChangeEvent,
+                  NULL,
+                  &Event
+                  );
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_WARN, "%a: CreateEvent: %r\n", __func__, Status));
+  }
+
   return EFI_SUCCESS;
 }
 
@@ -100,19 +125,7 @@ ScorpiResetWrite (
   IN UINT32  Value
   )
 {
-  EFI_STATUS  Status;
-  VOID        *Address;
-
-  Address = (VOID *)(UINTN)(mResetBase + Offset);
-  if (EfiGoneVirtual ()) {
-    Status = EfiConvertPointer (0, &Address);
-    if (EFI_ERROR (Status)) {
-      DEBUG ((DEBUG_ERROR, "%a: EfiConvertPointer: %r\n", __func__, Status));
-      CpuDeadLoop ();
-    }
-  }
-
-  MmioWrite32 ((UINTN)Address, Value);
+  MmioWrite32 ((UINTN)(mResetBase + Offset), Value);
   CpuDeadLoop ();
 }
 
