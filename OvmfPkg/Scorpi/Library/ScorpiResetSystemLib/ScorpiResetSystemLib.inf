@@ -27,5 +27,5 @@
   DebugLib
   DxeServicesTableLib
   IoLib
-  ScorpiHwInfoLib
+  UefiBootServicesTableLib
   UefiRuntimeLib

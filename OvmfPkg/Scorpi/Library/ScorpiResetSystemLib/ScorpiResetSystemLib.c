@@ -9,29 +9,16 @@
 #include <PiDxe.h>
 #include <Uefi/UefiSpec.h>
 
-#include <IndustryStandard/ScorpiX64HwInfo.h>
+#include <IndustryStandard/ScorpiX64Platform.h>
 #include <Library/BaseLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DxeServicesTableLib.h>
 #include <Library/IoLib.h>
 #include <Library/ResetSystemLib.h>
-#include <Library/ScorpiHwInfoLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiRuntimeLib.h>
 
-#define SCORPI_RESET_BASE            0xF0000000ULL
-#define SCORPI_RESET_SIZE            0x1000
-#define SCORPI_RESET_OFFSET          0
-#define SCORPI_SHUTDOWN_OFFSET       4
-#define SCORPI_RESET_VALUE           1
-#define SCORPI_SHUTDOWN_VALUE        1
-
-STATIC UINT64  mResetBase      = SCORPI_RESET_BASE;
-STATIC UINT32  mResetSize      = SCORPI_RESET_SIZE;
-STATIC UINT32  mResetOffset    = SCORPI_RESET_OFFSET;
-STATIC UINT32  mShutdownOffset = SCORPI_SHUTDOWN_OFFSET;
-STATIC UINT32  mResetValue     = SCORPI_RESET_VALUE;
-STATIC UINT32  mShutdownValue  = SCORPI_SHUTDOWN_VALUE;
+STATIC UINT64  mResetBase = SCORPI_X64_RESET_BASE;
 
 STATIC
 VOID
@@ -61,7 +48,7 @@ ScorpiResetMarkRuntime (
 
   Status = gDS->SetMemorySpaceAttributes (
                   mResetBase,
-                  mResetSize,
+                  SCORPI_X64_RESET_SIZE,
                   Descriptor.Attributes | EFI_MEMORY_RUNTIME
                   );
   if (EFI_ERROR (Status)) {
@@ -78,30 +65,9 @@ ScorpiResetSystemLibConstructor (
   IN EFI_SYSTEM_TABLE  *SystemTable
   )
 {
-  CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
-  CONST SCORPI_X64_HWINFO_RESET  *Reset;
-  SCORPI_HWINFO                  HwInfo;
-  RETURN_STATUS                  Status;
-  EFI_EVENT                      Event;
+  EFI_STATUS  Status;
+  EFI_EVENT   Event;
 
-  Status = ScorpiHwInfoRead (&HwInfo);
-  if (RETURN_ERROR (Status)) {
-    DEBUG ((DEBUG_WARN, "%a: ScorpiHwInfoRead: %r\n", __func__, Status));
-    return EFI_SUCCESS;
-  }
-
-  Entry = ScorpiHwInfoFind (&HwInfo, SCORPI_X64_ENTRY_RESET, NULL);
-  if (Entry != NULL) {
-    Reset           = (CONST SCORPI_X64_HWINFO_RESET *)Entry;
-    mResetBase      = Reset->Base;
-    mResetSize      = Reset->Size;
-    mResetOffset    = Reset->ResetOffset;
-    mShutdownOffset = Reset->ShutdownOffset;
-    mResetValue     = Reset->ResetValue;
-    mShutdownValue  = Reset->ShutdownValue;
-  }
-
-  ScorpiHwInfoRelease (&HwInfo);
   ScorpiResetMarkRuntime ();
 
   Status = gBS->CreateEvent (
@@ -135,7 +101,7 @@ ResetCold (
   VOID
   )
 {
-  ScorpiResetWrite (mResetOffset, mResetValue);
+  ScorpiResetWrite (SCORPI_X64_RESET_OFFSET, SCORPI_X64_RESET_VALUE);
 }
 
 VOID
@@ -144,7 +110,7 @@ ResetWarm (
   VOID
   )
 {
-  ScorpiResetWrite (mResetOffset, mResetValue);
+  ScorpiResetWrite (SCORPI_X64_RESET_OFFSET, SCORPI_X64_RESET_VALUE);
 }
 
 VOID
@@ -153,7 +119,7 @@ ResetShutdown (
   VOID
   )
 {
-  ScorpiResetWrite (mShutdownOffset, mShutdownValue);
+  ScorpiResetWrite (SCORPI_X64_SHUTDOWN_OFFSET, SCORPI_X64_SHUTDOWN_VALUE);
 }
 
 VOID

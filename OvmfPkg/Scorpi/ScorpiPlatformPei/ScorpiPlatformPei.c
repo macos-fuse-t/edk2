@@ -10,6 +10,7 @@
 
 #include <Guid/MemoryTypeInformation.h>
 #include <IndustryStandard/ScorpiX64HwInfo.h>
+#include <IndustryStandard/ScorpiX64Platform.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -332,19 +333,10 @@ ScorpiInitializePci (
 STATIC
 VOID
 ScorpiInitializeReset (
-  IN CONST SCORPI_HWINFO  *HwInfo
+  VOID
   )
 {
-  CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
-  CONST SCORPI_X64_HWINFO_RESET  *Reset;
-
-  Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_RESET, NULL);
-  if (Entry == NULL) {
-    return;
-  }
-
-  Reset = (CONST SCORPI_X64_HWINFO_RESET *)Entry;
-  PlatformAddIoMemoryBaseSizeHob (Reset->Base, Reset->Size);
+  PlatformAddIoMemoryBaseSizeHob (SCORPI_X64_RESET_BASE, SCORPI_X64_RESET_SIZE);
 }
 
 STATIC
@@ -453,7 +445,7 @@ ScorpiPlatformPeiEntry (
 
   ScorpiPublishPeiMemory (PlatformInfoHob);
   ScorpiInitializePci (&HwInfo, PlatformInfoHob);
-  ScorpiInitializeReset (&HwInfo);
+  ScorpiInitializeReset ();
   ScorpiPeiFvInitialization ();
   ScorpiMemTypeInfoInitialization ();
 

@@ -13,6 +13,7 @@
 #include <IndustryStandard/MemoryMappedConfigurationSpaceAccessTable.h>
 #include <IndustryStandard/SerialPortConsoleRedirectionTable.h>
 #include <IndustryStandard/ScorpiX64HwInfo.h>
+#include <IndustryStandard/ScorpiX64Platform.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -717,7 +718,6 @@ ScorpiLoadHwInfo (
   CONST SCORPI_X64_HWINFO_ENTRY   *Entry;
   CONST SCORPI_X64_HWINFO_APIC    *Apic;
   CONST SCORPI_X64_HWINFO_PCIE_ECAM  *Ecam;
-  CONST SCORPI_X64_HWINFO_RESET   *Reset;
 
   ReturnStatus = ScorpiHwInfoRead (&HwInfo);
   if (RETURN_ERROR (ReturnStatus)) {
@@ -766,29 +766,25 @@ ScorpiLoadHwInfo (
     goto Exit;
   }
 
-  Entry = ScorpiHwInfoFind (&HwInfo, SCORPI_X64_ENTRY_RESET, NULL);
-  if (Entry == NULL) {
-    Status = EFI_NOT_FOUND;
-    goto Exit;
-  }
-
-  Reset = (CONST SCORPI_X64_HWINFO_RESET *)Entry;
   Repo->FadtResetBlockInfo.ResetReg.AddressSpaceId    = EFI_ACPI_6_5_SYSTEM_MEMORY;
   Repo->FadtResetBlockInfo.ResetReg.RegisterBitWidth   = 8;
   Repo->FadtResetBlockInfo.ResetReg.RegisterBitOffset  = 0;
   Repo->FadtResetBlockInfo.ResetReg.AccessSize         = EFI_ACPI_6_5_BYTE;
-  Repo->FadtResetBlockInfo.ResetReg.Address            = Reset->Base + Reset->ResetOffset;
-  Repo->FadtResetBlockInfo.ResetValue                  = (UINT8)Reset->ResetValue;
+  Repo->FadtResetBlockInfo.ResetReg.Address            =
+    SCORPI_X64_RESET_BASE + SCORPI_X64_RESET_OFFSET;
+  Repo->FadtResetBlockInfo.ResetValue                  = SCORPI_X64_RESET_VALUE;
   Repo->FadtSleepBlockInfo.SleepControlReg.AddressSpaceId   = EFI_ACPI_6_5_SYSTEM_MEMORY;
   Repo->FadtSleepBlockInfo.SleepControlReg.RegisterBitWidth  = 8;
   Repo->FadtSleepBlockInfo.SleepControlReg.RegisterBitOffset = 0;
   Repo->FadtSleepBlockInfo.SleepControlReg.AccessSize        = EFI_ACPI_6_5_BYTE;
-  Repo->FadtSleepBlockInfo.SleepControlReg.Address           = Reset->Base + Reset->ShutdownOffset;
+  Repo->FadtSleepBlockInfo.SleepControlReg.Address           =
+    SCORPI_X64_RESET_BASE + SCORPI_X64_SHUTDOWN_OFFSET;
   Repo->FadtSleepBlockInfo.SleepStatusReg.AddressSpaceId     = EFI_ACPI_6_5_SYSTEM_MEMORY;
   Repo->FadtSleepBlockInfo.SleepStatusReg.RegisterBitWidth   = 8;
   Repo->FadtSleepBlockInfo.SleepStatusReg.RegisterBitOffset  = 0;
   Repo->FadtSleepBlockInfo.SleepStatusReg.AccessSize         = EFI_ACPI_6_5_BYTE;
-  Repo->FadtSleepBlockInfo.SleepStatusReg.Address            = Reset->Base + Reset->ShutdownOffset + 1;
+  Repo->FadtSleepBlockInfo.SleepStatusReg.Address            =
+    SCORPI_X64_RESET_BASE + SCORPI_X64_SHUTDOWN_OFFSET + 1;
 
   Status = ScorpiBuildLocalApicInfo (&HwInfo, Repo);
   if (EFI_ERROR (Status)) {
