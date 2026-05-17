@@ -774,11 +774,9 @@ ScorpiLoadHwInfo (
 
   Reset = (CONST SCORPI_X64_HWINFO_RESET *)Entry;
   Repo->FadtResetBlockInfo.ResetReg.AddressSpaceId    = EFI_ACPI_6_5_SYSTEM_MEMORY;
-  Repo->FadtResetBlockInfo.ResetReg.RegisterBitWidth   = (Reset->Size >= sizeof (UINT32)) ? 32 : 8;
+  Repo->FadtResetBlockInfo.ResetReg.RegisterBitWidth   = 8;
   Repo->FadtResetBlockInfo.ResetReg.RegisterBitOffset  = 0;
-  Repo->FadtResetBlockInfo.ResetReg.AccessSize         = (Reset->Size >= sizeof (UINT32)) ?
-                                                         EFI_ACPI_6_5_DWORD :
-                                                         EFI_ACPI_6_5_BYTE;
+  Repo->FadtResetBlockInfo.ResetReg.AccessSize         = EFI_ACPI_6_5_BYTE;
   Repo->FadtResetBlockInfo.ResetReg.Address            = Reset->Base + Reset->ResetOffset;
   Repo->FadtResetBlockInfo.ResetValue                  = (UINT8)Reset->ResetValue;
 
