@@ -45,8 +45,12 @@ extern CHAR8  dsdt_aml_code[];
 #define SCORPI_PCI_IRQ_BASE            16
 #define SCORPI_PCI_INTERRUPT_MAP_COUNT (SCORPI_PCI_PRT_DEVICE_COUNT * SCORPI_PCI_INTX_COUNT)
 
+#define SCORPI_PCI_SPACE_IO   1
 #define SCORPI_PCI_SPACE_M32  2
 #define SCORPI_PCI_SPACE_M64  3
+
+#define SCORPI_PCI_IO_BASE  0xC000
+#define SCORPI_PCI_IO_SIZE  0x4000
 
 #define SCORPI_DSDT_TPM_BASE_PLACEHOLDER  0x54504D30
 #define SCORPI_DSDT_TPM_SIZE_PLACEHOLDER  0x54504D31
@@ -423,6 +427,7 @@ ScorpiBuildPciAddressMaps (
   CONST SCORPI_X64_HWINFO_PCI_WINDOW  *Window;
   UINT32                              Count;
   UINT32                              Index;
+  UINT32                              TotalCount;
   UINT8                               SpaceCode;
   EFI_STATUS                          Status;
 
@@ -436,18 +441,28 @@ ScorpiBuildPciAddressMaps (
     return EFI_NOT_FOUND;
   }
 
-  Repo->PciAddressMaps = AllocateZeroPool (sizeof (*Repo->PciAddressMaps) * Count);
+  TotalCount = Count + 1;
+
+  Repo->PciAddressMaps = AllocateZeroPool (sizeof (*Repo->PciAddressMaps) * TotalCount);
   if (Repo->PciAddressMaps == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
-  Repo->PciAddressMapRefs = AllocateZeroPool (sizeof (*Repo->PciAddressMapRefs) * Count);
+  Repo->PciAddressMapRefs = AllocateZeroPool (sizeof (*Repo->PciAddressMapRefs) * TotalCount);
   if (Repo->PciAddressMapRefs == NULL) {
     return EFI_OUT_OF_RESOURCES;
   }
 
+  Repo->PciAddressMaps[0].SpaceCode   = SCORPI_PCI_SPACE_IO;
+  Repo->PciAddressMaps[0].PciAddress  = SCORPI_PCI_IO_BASE;
+  Repo->PciAddressMaps[0].CpuAddress  = SCORPI_PCI_IO_BASE;
+  Repo->PciAddressMaps[0].AddressSize = SCORPI_PCI_IO_SIZE;
+
+  Repo->PciAddressMapRefs[0].ReferenceToken =
+    (CM_OBJECT_TOKEN)&Repo->PciAddressMaps[0];
+
   Entry = NULL;
-  Index = 0;
+  Index = 1;
   while ((Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_PCI_WINDOW, Entry)) != NULL) {
     Window = (CONST SCORPI_X64_HWINFO_PCI_WINDOW *)Entry;
     Status = ScorpiPciWindowSpaceCode (Window, &SpaceCode);
@@ -466,7 +481,7 @@ ScorpiBuildPciAddressMaps (
     Index++;
   }
 
-  Repo->PciAddressMapCount             = Count;
+  Repo->PciAddressMapCount             = TotalCount;
   Repo->PciConfigSpace.AddressMapToken = (CM_OBJECT_TOKEN)Repo->PciAddressMapRefs;
 
   return EFI_SUCCESS;
@@ -969,6 +984,8 @@ ScorpiLoadHwInfo (
   if (EFI_ERROR (Status)) {
     goto Exit;
   }
+
+  Repo->FadtMiscInfo.Century = 0x32;
 
   Repo->FadtResetBlockInfo.ResetReg.AddressSpaceId    = EFI_ACPI_6_5_SYSTEM_MEMORY;
   Repo->FadtResetBlockInfo.ResetReg.RegisterBitWidth   = 8;
