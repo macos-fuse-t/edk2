@@ -334,6 +334,7 @@ ScorpiBuildLocalApicInfo (
   )
 {
   CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
+  CONST SCORPI_X64_HWINFO_APIC   *Apic;
   UINT32                         Count;
   UINT32                         Index;
   BOOLEAN                        UseX2Apic;
@@ -354,6 +355,12 @@ ScorpiBuildLocalApicInfo (
   }
 
   UseX2Apic = FALSE;
+  Entry     = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_APIC, NULL);
+  if (Entry != NULL) {
+    Apic       = (CONST SCORPI_X64_HWINFO_APIC *)Entry;
+    UseX2Apic = ((Apic->Flags & SCORPI_X64_APIC_FLAG_X2APIC) != 0);
+  }
+
   Entry     = NULL;
   Index     = 0;
   while ((Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_CPU, Entry)) != NULL) {
