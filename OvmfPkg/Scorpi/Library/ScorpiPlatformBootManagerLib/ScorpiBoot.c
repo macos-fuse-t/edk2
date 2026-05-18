@@ -446,6 +446,10 @@ ScorpiAsciiPathToChar16 (
   UINTN   Index;
   UINTN   Size;
 
+  while ((*Path == '/') || (*Path == '\\')) {
+    Path++;
+  }
+
   Size   = AsciiStrLen (Path) + 1;
   Result = AllocateZeroPool (Size * sizeof (*Result));
   if (Result == NULL) {
@@ -461,19 +465,140 @@ ScorpiAsciiPathToChar16 (
 
 STATIC
 BOOLEAN
+ScorpiIsCdromHandle (
+  IN EFI_HANDLE  Handle
+  )
+{
+  EFI_DEVICE_PATH_PROTOCOL  *Node;
+
+  Node = DevicePathFromHandle (Handle);
+  if (Node == NULL) {
+    return FALSE;
+  }
+
+  while (!IsDevicePathEnd (Node)) {
+    if ((DevicePathType (Node) == MEDIA_DEVICE_PATH) &&
+        (DevicePathSubType (Node) == MEDIA_CDROM_DP))
+    {
+      return TRUE;
+    }
+
+    Node = NextDevicePathNode (Node);
+  }
+
+  return FALSE;
+}
+
+STATIC
+BOOLEAN
+ScorpiCommitBootFileOption (
+  IN OUT EFI_BOOT_MANAGER_LOAD_OPTION  *NewOption,
+  OUT    UINT16                        *OptionNumber
+  )
+{
+  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions;
+  EFI_STATUS                    Status;
+  INTN                          OptionIndex;
+  UINTN                         BootOptionCount;
+
+  BootOptions = EfiBootManagerGetLoadOptions (
+                  &BootOptionCount,
+                  LoadOptionTypeBoot
+                  );
+  OptionIndex = EfiBootManagerFindLoadOption (
+                  NewOption,
+                  BootOptions,
+                  BootOptionCount
+                  );
+  if (OptionIndex >= 0) {
+    *OptionNumber = (UINT16)BootOptions[OptionIndex].OptionNumber;
+  } else {
+    Status = EfiBootManagerAddLoadOptionVariable (NewOption, MAX_UINTN);
+    if (EFI_ERROR (Status)) {
+      EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+      return FALSE;
+    }
+
+    *OptionNumber = (UINT16)NewOption->OptionNumber;
+  }
+
+  EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
+  return TRUE;
+}
+
+STATIC
+BOOLEAN
+ScorpiResolveCdBootFileSpec (
+  IN  CONST SCORPI_BOOT_DEVICE  *Device,
+  IN  CONST CHAR16              *BootFilePath,
+  OUT UINT16                    *OptionNumber
+  )
+{
+  EFI_BOOT_MANAGER_LOAD_OPTION  NewOption;
+  EFI_HANDLE                    *Handles;
+  EFI_STATUS                    Status;
+  UINTN                         HandleCount;
+  UINTN                         Index;
+
+  if (!AsciiEqualsCi (Device->Type, "cd")) {
+    return FALSE;
+  }
+
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiBlockIoProtocolGuid,
+                  NULL,
+                  &HandleCount,
+                  &Handles
+                  );
+  if (EFI_ERROR (Status)) {
+    return FALSE;
+  }
+
+  for (Index = 0; Index < HandleCount; Index++) {
+    if (!ScorpiIsCdromHandle (Handles[Index])) {
+      continue;
+    }
+
+    Status = ScorpiInitializeBootFileOption (
+               Handles[Index],
+               BootFilePath,
+               &NewOption
+               );
+    if (EFI_ERROR (Status)) {
+      continue;
+    }
+
+    if (!ScorpiBootOptionMatchesDevice (&NewOption, Device)) {
+      EfiBootManagerFreeLoadOption (&NewOption);
+      continue;
+    }
+
+    if (ScorpiCommitBootFileOption (&NewOption, OptionNumber)) {
+      EfiBootManagerFreeLoadOption (&NewOption);
+      FreePool (Handles);
+      return TRUE;
+    }
+
+    EfiBootManagerFreeLoadOption (&NewOption);
+  }
+
+  FreePool (Handles);
+  return FALSE;
+}
+
+STATIC
+BOOLEAN
 ScorpiResolveBootFileSpec (
   IN  CONST SCORPI_BOOT_DEVICE  *Device,
   IN  CONST CHAR8               *BootFile,
   OUT UINT16                    *OptionNumber
   )
 {
-  EFI_BOOT_MANAGER_LOAD_OPTION  *BootOptions;
   EFI_BOOT_MANAGER_LOAD_OPTION  NewOption;
   EFI_HANDLE                    *Handles;
   EFI_STATUS                    Status;
   CHAR16                        *BootFilePath;
-  INTN                          OptionIndex;
-  UINTN                         BootOptionCount;
   UINTN                         HandleCount;
   UINTN                         Index;
 
@@ -513,36 +638,22 @@ ScorpiResolveBootFileSpec (
       continue;
     }
 
-    BootOptions = EfiBootManagerGetLoadOptions (
-                    &BootOptionCount,
-                    LoadOptionTypeBoot
-                    );
-    OptionIndex = EfiBootManagerFindLoadOption (
-                    &NewOption,
-                    BootOptions,
-                    BootOptionCount
-                    );
-    if (OptionIndex >= 0) {
-      *OptionNumber = (UINT16)BootOptions[OptionIndex].OptionNumber;
-    } else {
-      Status = EfiBootManagerAddLoadOptionVariable (&NewOption, MAX_UINTN);
-      if (EFI_ERROR (Status)) {
-        EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
-        EfiBootManagerFreeLoadOption (&NewOption);
-        continue;
-      }
-
-      *OptionNumber = (UINT16)NewOption.OptionNumber;
+    if (ScorpiCommitBootFileOption (&NewOption, OptionNumber)) {
+      EfiBootManagerFreeLoadOption (&NewOption);
+      FreePool (Handles);
+      FreePool (BootFilePath);
+      return TRUE;
     }
 
-    EfiBootManagerFreeLoadOptions (BootOptions, BootOptionCount);
     EfiBootManagerFreeLoadOption (&NewOption);
-    FreePool (Handles);
+  }
+
+  FreePool (Handles);
+  if (ScorpiResolveCdBootFileSpec (Device, BootFilePath, OptionNumber)) {
     FreePool (BootFilePath);
     return TRUE;
   }
 
-  FreePool (Handles);
   FreePool (BootFilePath);
   return FALSE;
 }

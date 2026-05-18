@@ -49,6 +49,7 @@ Abstract:
 #include <Protocol/PciIo.h>
 #include <Protocol/FirmwareVolume2.h>
 #include <Protocol/SimpleFileSystem.h>
+#include <Protocol/BlockIo.h>
 #include <Protocol/PciRootBridgeIo.h>
 #include <Protocol/S3SaveState.h>
 #include <Protocol/DxeSmmReadyToLock.h>
