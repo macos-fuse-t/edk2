@@ -11,10 +11,11 @@
 DEFINE BLOCK_SIZE        = 0x1000
 DEFINE VARS_OFFSET       = 0
 
-DEFINE VARS_SIZE         = 0x84000
-DEFINE VARS_BLOCKS       = 0x84
+DEFINE VARS_SIZE         = 0xC0000
+DEFINE VARS_BLOCKS       = 0x3
 DEFINE VARS_LIVE_SIZE    = 0x40000
-DEFINE VARS_SPARE_SIZE   = 0x42000
+DEFINE VARS_WORK_SIZE    = 0x40000
+DEFINE VARS_SPARE_SIZE   = 0x40000
 
 DEFINE FW_BASE_ADDRESS   = 0x004FFFD0
 DEFINE FW_SIZE           = 0x00400000
@@ -37,7 +38,7 @@ SET gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageEventLogBase = gUefiOvmfPkgT
 SET gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageEventLogSize = $(BLOCK_SIZE)
 
 SET gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageFtwWorkingBase = gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageEventLogBase + gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageEventLogSize
-SET gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize = $(BLOCK_SIZE)
+SET gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize = $(VARS_WORK_SIZE)
 
 SET gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageFtwSpareBase = gUefiOvmfPkgTokenSpaceGuid.PcdOvmfFlashNvStorageFtwWorkingBase + gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize
 SET gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize = $(VARS_SPARE_SIZE)

@@ -33,6 +33,7 @@
 #define SCORPI_X64_ENTRY_FRAMEBUFFER     8
 #define SCORPI_X64_ENTRY_TPM             9
 #define SCORPI_X64_ENTRY_RESET           10
+#define SCORPI_X64_ENTRY_FLASH           11
 
 #define SCORPI_X64_RANGE_USABLE          1
 #define SCORPI_X64_RANGE_RESERVED        2
@@ -158,6 +159,14 @@ typedef struct {
   UINT32                     ShutdownValue;
   UINT32                     Flags;
 } SCORPI_X64_HWINFO_RESET;
+
+typedef struct {
+  SCORPI_X64_HWINFO_ENTRY    Entry;
+  UINT64                     Base;
+  UINT64                     Size;
+  UINT32                     BlockSize;
+  UINT32                     Flags;
+} SCORPI_X64_HWINFO_FLASH;
 
 #pragma pack()
 

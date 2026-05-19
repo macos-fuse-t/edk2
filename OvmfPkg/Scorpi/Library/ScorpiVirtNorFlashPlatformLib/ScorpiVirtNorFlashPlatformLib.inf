@@ -1,0 +1,41 @@
+## @file
+#  Scorpi x64 NOR flash discovery for VirtNorFlashDxe.
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 1.29
+  BASE_NAME                      = ScorpiVirtNorFlashPlatformLib
+  FILE_GUID                      = 58bbdc68-0a24-407a-8cbb-68fe7be3f695
+  MODULE_TYPE                    = BASE
+  VERSION_STRING                 = 1.0
+  LIBRARY_CLASS                  = VirtNorFlashPlatformLib|DXE_DRIVER DXE_RUNTIME_DRIVER
+  CONSTRUCTOR                    = ScorpiVirtNorFlashPlatformLibConstructor
+
+[Sources]
+  ScorpiVirtNorFlashPlatformLib.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  OvmfPkg/OvmfPkg.dec
+
+[LibraryClasses]
+  BaseLib
+  DebugLib
+  PcdLib
+  ScorpiHwInfoLib
+
+[Pcd]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvModeEnable
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareBase
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingBase
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingSize
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase64
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableSize

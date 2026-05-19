@@ -185,6 +185,7 @@
   TableHelperLib|DynamicTablesPkg/Library/Common/TableHelperLib/TableHelperLib.inf
   TpmMeasurementLib|MdeModulePkg/Library/TpmMeasurementLibNull/TpmMeasurementLibNull.inf
   ScorpiHwInfoLib|OvmfPkg/Scorpi/Library/ScorpiHwInfoLib/ScorpiHwInfoLib.inf
+  VirtNorFlashPlatformLib|OvmfPkg/Scorpi/Library/ScorpiVirtNorFlashPlatformLib/ScorpiVirtNorFlashPlatformLib.inf
   QemuFwCfgSimpleParserLib|OvmfPkg/Library/QemuFwCfgSimpleParserLib/QemuFwCfgSimpleParserLib.inf
   VirtioLib|OvmfPkg/Library/VirtioLib/VirtioLib.inf
   LoadLinuxLib|OvmfPkg/Library/LoadLinuxLib/LoadLinuxLib.inf
@@ -602,6 +603,8 @@
   gEfiMdeModulePkgTokenSpaceGuid.PcdSetupVideoVerticalResolution|768
 
 !if $(SMM_REQUIRE) == FALSE
+  gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvModeEnable|FALSE
+  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase|0
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageVariableBase64|0
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwWorkingBase64|0
   gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareBase64|0
@@ -1009,12 +1012,18 @@
   #
   # Variable driver stack (non-SMM)
   #
-  OvmfPkg/QemuFlashFvbServicesRuntimeDxe/FvbServicesRuntimeDxe.inf
+  OvmfPkg/VirtNorFlashDxe/VirtNorFlashDxe.inf {
+    <LibraryClasses>
+      BaseMemoryLib|MdePkg/Library/BaseMemoryLib/BaseMemoryLib.inf
+  }
   OvmfPkg/EmuVariableFvbRuntimeDxe/Fvb.inf {
     <LibraryClasses>
       PlatformFvbLib|OvmfPkg/Library/EmuVariableFvbLib/EmuVariableFvbLib.inf
   }
-  MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
+  MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf {
+    <LibraryClasses>
+      NULL|OvmfPkg/Scorpi/Library/ScorpiVirtNorFlashPlatformLib/ScorpiVirtNorFlashPlatformLib.inf
+  }
   MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf {
     <LibraryClasses>
       NULL|MdeModulePkg/Library/VarCheckUefiLib/VarCheckUefiLib.inf

@@ -463,6 +463,18 @@ ScorpiReserveEmuVariableNvStore (
   ASSERT_RETURN_ERROR (PcdStatus);
 }
 
+STATIC
+BOOLEAN
+ScorpiHasFlashVariables (
+  IN CONST SCORPI_HWINFO  *HwInfo
+  )
+{
+  CONST SCORPI_X64_HWINFO_ENTRY  *Entry;
+
+  Entry = ScorpiHwInfoFind (HwInfo, SCORPI_X64_ENTRY_FLASH, NULL);
+  return (Entry != NULL);
+}
+
 EFI_STATUS
 EFIAPI
 ScorpiPlatformPeiEntry (
@@ -517,7 +529,9 @@ ScorpiPlatformPeiEntry (
   ReturnStatus = PcdSetBoolS (PcdSetNxForStack, PlatformInfoHob->PcdSetNxForStack);
   ASSERT_RETURN_ERROR (ReturnStatus);
 
-  ScorpiReserveEmuVariableNvStore ();
+  if (!ScorpiHasFlashVariables (&HwInfo)) {
+    ScorpiReserveEmuVariableNvStore ();
+  }
   ScorpiHwInfoRelease (&HwInfo);
 
   return EFI_SUCCESS;

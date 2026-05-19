@@ -51,7 +51,6 @@
 
 [Pcd]
   gEfiMdeModulePkgTokenSpaceGuid.PcdEmuVariableNvStoreReserved
-  gEfiMdeModulePkgTokenSpaceGuid.PcdFlashNvStorageFtwSpareSize
   gEfiMdeModulePkgTokenSpaceGuid.PcdSetNxForStack
   gEfiSecurityPkgTokenSpaceGuid.PcdActiveTpmInterfaceType
   gEfiSecurityPkgTokenSpaceGuid.PcdCRBIdleByPass

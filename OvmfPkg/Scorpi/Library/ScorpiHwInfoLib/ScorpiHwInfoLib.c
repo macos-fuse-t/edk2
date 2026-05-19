@@ -38,6 +38,8 @@ ScorpiHwInfoEntryMinSize (
       return sizeof (SCORPI_X64_HWINFO_TPM);
     case SCORPI_X64_ENTRY_RESET:
       return sizeof (SCORPI_X64_HWINFO_RESET);
+    case SCORPI_X64_ENTRY_FLASH:
+      return sizeof (SCORPI_X64_HWINFO_FLASH);
     default:
       return sizeof (SCORPI_X64_HWINFO_ENTRY);
   }

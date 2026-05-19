@@ -40,14 +40,7 @@ FV = SECFV
 #
 # Build the variable store as a separate writable flash image.
 #
-[FD.SCORPI_VARS]
-BaseAddress   = $(FW_BASE_ADDRESS)
-Size          = $(VARS_SIZE)
-ErasePolarity = 1
-BlockSize     = $(BLOCK_SIZE)
-NumBlocks     = $(VARS_BLOCKS)
-
-!include OvmfPkg/Include/Fdf/VarStore.fdf.inc
+!include ArmVirtPkg/ScorpiVarStore.fdf.inc
 
 ################################################################################
 
@@ -217,7 +210,7 @@ APRIORI DXE {
   INF  MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
   INF  OvmfPkg/AmdSevDxe/AmdSevDxe.inf
 !if $(SMM_REQUIRE) == FALSE
-  INF  OvmfPkg/QemuFlashFvbServicesRuntimeDxe/FvbServicesRuntimeDxe.inf
+  INF  OvmfPkg/VirtNorFlashDxe/VirtNorFlashDxe.inf
 !endif
 }
 
@@ -380,7 +373,7 @@ INF  MdeModulePkg/Universal/Variable/RuntimeDxe/VariableSmmRuntimeDxe.inf
 #
 # Variable driver stack (non-SMM)
 #
-INF  OvmfPkg/QemuFlashFvbServicesRuntimeDxe/FvbServicesRuntimeDxe.inf
+INF  OvmfPkg/VirtNorFlashDxe/VirtNorFlashDxe.inf
 INF  OvmfPkg/EmuVariableFvbRuntimeDxe/Fvb.inf
 INF  MdeModulePkg/Universal/FaultTolerantWriteDxe/FaultTolerantWriteDxe.inf
 INF  MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
