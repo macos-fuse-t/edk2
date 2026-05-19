@@ -14,6 +14,40 @@ DefinitionBlock ("Dsdt.aml", "DSDT", 2, "SCORPI", "SCORPIX", 0x00000001)
 
     Scope (_SB)
     {
+        Device (PWRB)
+        {
+            Name (_HID, "PNP0C0C")
+            Name (_UID, Zero)
+        }
+
+        Device (GED0)
+        {
+            Name (_HID, "ACPI0013")
+            Name (_UID, Zero)
+            Name (_CRS, ResourceTemplate ()
+            {
+                Interrupt (ResourceConsumer, Edge, ActiveHigh, Exclusive, ,, )
+                {
+                    10
+                }
+            })
+
+            OperationRegion (GEDS, SystemMemory, 0xF0001000, 0x04)
+            Field (GEDS, DWordAcc, NoLock, WriteAsZeros)
+            {
+                ESEL, 32
+            }
+
+            Method (_EVT, 1, Serialized)
+            {
+                Store (ESEL, Local0)
+                If (LEqual (And (Local0, 0x02), 0x02))
+                {
+                    Notify (PWRB, 0x80)
+                }
+            }
+        }
+
         Device (RTC)
         {
             Name (_HID, EisaId ("PNP0B00"))
