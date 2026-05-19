@@ -373,6 +373,8 @@ NorFlashFvbInitialize (
   )
 {
   EFI_STATUS     Status;
+  EFI_GCD_MEMORY_SPACE_DESCRIPTOR  GcdDescriptor;
+  EFI_PHYSICAL_ADDRESS             RuntimeMmioRegionBase;
   UINT32         FvbNumLba;
   EFI_BOOT_MODE  BootMode;
   UINTN          RuntimeMmioRegionSize;
@@ -388,20 +390,38 @@ NorFlashFvbInitialize (
   //       even if we only use the small block region at the top of the NOR Flash.
   //       The reason is when the NOR Flash memory is set into program mode, the command
   //       is written as the base of the flash region (ie: Instance->DeviceBaseAddress)
+  RuntimeMmioRegionBase = Instance->DeviceBaseAddress;
   RuntimeMmioRegionSize = (Instance->RegionBaseAddress - Instance->DeviceBaseAddress) + Instance->Size;
 
   Status = gDS->AddMemorySpace (
                   EfiGcdMemoryTypeMemoryMappedIo,
-                  Instance->DeviceBaseAddress,
+                  RuntimeMmioRegionBase,
                   RuntimeMmioRegionSize,
                   EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
                   );
   ASSERT_EFI_ERROR (Status);
 
-  Status = gDS->SetMemorySpaceAttributes (
-                  Instance->DeviceBaseAddress,
+  Status = gDS->AllocateMemorySpace (
+                  EfiGcdAllocateAddress,
+                  EfiGcdMemoryTypeMemoryMappedIo,
+                  0,
                   RuntimeMmioRegionSize,
-                  EFI_MEMORY_UC | EFI_MEMORY_RUNTIME
+                  &RuntimeMmioRegionBase,
+                  gImageHandle,
+                  NULL
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  Status = gDS->GetMemorySpaceDescriptor (
+                  RuntimeMmioRegionBase,
+                  &GcdDescriptor
+                  );
+  ASSERT_EFI_ERROR (Status);
+
+  Status = gDS->SetMemorySpaceAttributes (
+                  RuntimeMmioRegionBase,
+                  RuntimeMmioRegionSize,
+                  GcdDescriptor.Attributes | EFI_MEMORY_RUNTIME
                   );
   ASSERT_EFI_ERROR (Status);
 
